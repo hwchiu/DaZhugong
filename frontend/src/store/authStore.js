@@ -8,9 +8,28 @@ const SAFE_AUTH_ERROR_MESSAGE = 'Unable to verify your account access right now.
 let authObserverUnsubscribe = null;
 let authObserverGeneration = 0;
 let authObserverActive = false;
+let pendingForcedSignOutError = null;
 
 function isCurrentAuthObserverGeneration(generation) {
   return authObserverActive && generation === authObserverGeneration;
+}
+
+function clearPendingForcedSignOutError() {
+  pendingForcedSignOutError = null;
+}
+
+function setPendingForcedSignOutError(generation, authError) {
+  pendingForcedSignOutError = { generation, authError };
+}
+
+function consumePendingForcedSignOutError(generation) {
+  if (pendingForcedSignOutError?.generation !== generation - 1) {
+    return null;
+  }
+
+  const { authError } = pendingForcedSignOutError;
+  clearPendingForcedSignOutError();
+  return authError;
 }
 
 function getMemberCollection() {
@@ -26,6 +45,15 @@ function setSignedOutState(authError = null) {
   });
 }
 
+function setAuthenticatingState() {
+  useAuthStore.setState({
+    authReady: false,
+    firebaseUser: null,
+    currentMember: null,
+    authError: null,
+  });
+}
+
 function setSignedInState({ firebaseUser, currentMember }) {
   useAuthStore.setState({
     authReady: true,
@@ -37,7 +65,11 @@ function setSignedInState({ firebaseUser, currentMember }) {
 
 async function signOutSafely() {
   try {
-    await logout();
+    if (!auth) {
+      throw new Error('Firebase auth is unavailable.');
+    }
+
+    await signOut(auth);
   } catch {
     // Intentionally ignored: invalid membership states should still clear local auth state.
   }
@@ -53,6 +85,7 @@ async function reconcileSignedInUser(user, generation) {
   const matches = snapshot?.docs ?? [];
 
   if (matches.length !== 1) {
+    setPendingForcedSignOutError(generation, SAFE_AUTH_ERROR_MESSAGE);
     if (!isCurrentAuthObserverGeneration(generation)) {
       return;
     }
@@ -62,6 +95,7 @@ async function reconcileSignedInUser(user, generation) {
       return;
     }
 
+    clearPendingForcedSignOutError();
     setSignedOutState(SAFE_AUTH_ERROR_MESSAGE);
     return;
   }
@@ -86,13 +120,17 @@ async function handleAuthStateChange(user, generation) {
   }
 
   if (!user) {
-    setSignedOutState(null);
+    setSignedOutState(consumePendingForcedSignOutError(generation));
     return;
   }
+
+  clearPendingForcedSignOutError();
+  setAuthenticatingState();
 
   try {
     await reconcileSignedInUser(user, generation);
   } catch {
+    setPendingForcedSignOutError(generation, SAFE_AUTH_ERROR_MESSAGE);
     if (!isCurrentAuthObserverGeneration(generation)) {
       return;
     }
@@ -102,6 +140,7 @@ async function handleAuthStateChange(user, generation) {
       return;
     }
 
+    clearPendingForcedSignOutError();
     setSignedOutState(SAFE_AUTH_ERROR_MESSAGE);
   }
 }
@@ -113,6 +152,7 @@ function stopAuthObserver() {
 
   authObserverGeneration += 1;
   authObserverActive = false;
+  clearPendingForcedSignOutError();
   const unsubscribe = authObserverUnsubscribe;
   authObserverUnsubscribe = null;
   unsubscribe();
@@ -137,6 +177,8 @@ export async function logout() {
     throw new Error('Firebase auth is unavailable.');
   }
 
+  clearPendingForcedSignOutError();
+  useAuthStore.setState({ authError: null });
   return signOut(auth);
 }
 

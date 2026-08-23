@@ -307,6 +307,73 @@ describe('authStore', () => {
     expect(firebaseMock.signOut).not.toHaveBeenCalled();
   });
 
+  it('clears the established member identity while a newer auth lookup is pending', async () => {
+    const userA = { uid: 'user-a' };
+    const userB = { uid: 'user-b' };
+    const pendingLookup = createDeferred();
+
+    firebaseMock.getDocs
+      .mockResolvedValueOnce({
+        docs: [
+          {
+            id: 'member-a',
+            data: () => ({ authUid: 'user-a', displayName: 'Ada Lovelace' }),
+          },
+        ],
+      })
+      .mockImplementationOnce(() => pendingLookup.promise);
+
+    const { startAuthObserver, useAuthStore } = await loadAuthStore();
+    startAuthObserver();
+
+    getLatestSubscription().callback(userA);
+    await flushMicrotasks();
+
+    expect(useAuthStore.getState()).toMatchObject({
+      authReady: true,
+      firebaseUser: userA,
+      currentMember: {
+        id: 'member-a',
+        authUid: 'user-a',
+        displayName: 'Ada Lovelace',
+      },
+      groupId: 'main',
+      authError: null,
+    });
+
+    getLatestSubscription().callback(userB);
+
+    expect(useAuthStore.getState()).toMatchObject({
+      authReady: false,
+      firebaseUser: null,
+      currentMember: null,
+      groupId: 'main',
+      authError: null,
+    });
+
+    pendingLookup.resolve({
+      docs: [
+        {
+          id: 'member-b',
+          data: () => ({ authUid: 'user-b', displayName: 'Beatrice' }),
+        },
+      ],
+    });
+    await flushMicrotasks();
+
+    expect(useAuthStore.getState()).toMatchObject({
+      authReady: true,
+      firebaseUser: userB,
+      currentMember: {
+        id: 'member-b',
+        authUid: 'user-b',
+        displayName: 'Beatrice',
+      },
+      groupId: 'main',
+      authError: null,
+    });
+  });
+
   it('ignores a pending lookup after cleanup', async () => {
     const userA = { uid: 'user-a' };
     const pendingLookup = createDeferred();
@@ -389,6 +456,61 @@ describe('authStore', () => {
       authError: 'Unable to verify your account access right now.',
     });
   });
+
+  it.each([
+    ['invalid membership', () => firebaseMock.getDocs.mockResolvedValue({ docs: [] })],
+    ['membership query failure', () => firebaseMock.getDocs.mockRejectedValue(new Error('backend exploded'))],
+  ])(
+    'preserves the safe auth error through the forced signout observer event for %s',
+    async (_, arrangeFailure) => {
+      const userA = { uid: 'user-a' };
+      const userB = { uid: 'user-b' };
+      arrangeFailure();
+      firebaseMock.signOut.mockImplementation(async () => {
+        getLatestSubscription().callback(null);
+      });
+
+      const { startAuthObserver, useAuthStore } = await loadAuthStore();
+      startAuthObserver();
+
+      getLatestSubscription().callback(userA);
+      await flushMicrotasks();
+
+      expect(firebaseMock.signOut).toHaveBeenCalledWith(firebaseMock.auth);
+      expect(useAuthStore.getState()).toMatchObject({
+        authReady: true,
+        firebaseUser: null,
+        currentMember: null,
+        groupId: 'main',
+        authError: 'Unable to verify your account access right now.',
+      });
+
+      firebaseMock.getDocs.mockReset();
+      firebaseMock.getDocs.mockResolvedValueOnce({
+        docs: [
+          {
+            id: 'member-b',
+            data: () => ({ authUid: 'user-b', displayName: 'Beatrice' }),
+          },
+        ],
+      });
+
+      getLatestSubscription().callback(userB);
+      await flushMicrotasks();
+
+      expect(useAuthStore.getState()).toMatchObject({
+        authReady: true,
+        firebaseUser: userB,
+        currentMember: {
+          id: 'member-b',
+          authUid: 'user-b',
+          displayName: 'Beatrice',
+        },
+        groupId: 'main',
+        authError: null,
+      });
+    },
+  );
 
   it('rejects logout failures instead of pretending success', async () => {
     const failure = new Error('sign-out failed');
