@@ -207,16 +207,19 @@ async function seed() {
   console.log('✅ Group created');
 
   const members = [
-    { id: 'member1', name: '你', avatar: 'pig', color: '#FF6B8A', pinHash: hashPin('1234'), totalTokens: 0 },
-    { id: 'member2', name: 'Kevin', avatar: 'cat', color: '#4A90E2', pinHash: hashPin('1234'), totalTokens: 0 },
-    { id: 'member3', name: 'Amy', avatar: 'frog', color: '#7ED321', pinHash: hashPin('1234'), totalTokens: 0 },
-    { id: 'member4', name: 'Jamie', avatar: 'bear', color: '#9B59B6', pinHash: hashPin('1234'), totalTokens: 0 },
-    { id: 'member5', name: 'Vivian', avatar: 'dog', color: '#F39C12', pinHash: hashPin('1234'), totalTokens: 0 },
+    { id: 'member1', name: '你', avatar: 'pig', color: '#FF6B8A', totalTokens: 0 },
+    { id: 'member2', name: 'Kevin', avatar: 'cat', color: '#4A90E2', totalTokens: 0 },
+    { id: 'member3', name: 'Amy', avatar: 'frog', color: '#7ED321', totalTokens: 0 },
+    { id: 'member4', name: 'Jamie', avatar: 'bear', color: '#9B59B6', totalTokens: 0 },
+    { id: 'member5', name: 'Vivian', avatar: 'dog', color: '#F39C12', totalTokens: 0 },
   ];
 
   for (const m of members) {
     const { id, ...data } = m;
     await groupRef.collection('members').doc(id).set(data);
+    await groupRef.collection('memberAuth').doc(id).set({
+      pinHash: hashPin('1234'),
+    });
     console.log(`✅ Seeded: ${m.name}`);
   }
 
@@ -248,6 +251,7 @@ npm run seed
 - [ ] **Step 5: 驗證 Firestore 有資料**
 
 前往 Firebase Console → Firestore → 確認 `groups/main/members` 有 5 筆資料。
+再確認 `groups/main/memberAuth` 也有對應的 5 筆 PIN 雜湊資料。
 
 - [ ] **Step 6: Commit**
 
@@ -598,8 +602,10 @@ git commit -m "feat: add firestore realtime hooks for group, pending, and tokens
 
 ```jsx
 import { useState } from 'react';
+import { httpsCallable } from 'firebase/functions';
 import { useGroup } from '../hooks/useGroup';
 import { useAuthStore } from '../store/authStore';
+import { functions } from '../firebase';
 
 const AVATARS = { pig: '🐷', cat: '🐱', frog: '🐸', bear: '🐻', dog: '🐶' };
 
@@ -612,14 +618,11 @@ export default function Login() {
 
   async function handleLogin() {
     if (!selected || pin.length !== 4) return;
-    // Phase 1: 簡單比對（PIN 儲存為 sha256 hash，透過 Web Crypto API 驗證）
-    const encoder = new TextEncoder();
-    const data = encoder.encode(pin);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+    // PIN 驗證交給 callable Cloud Function，前端不讀取 pinHash
+    const verifyMemberPin = httpsCallable(functions, 'verifyMemberPin');
+    const result = await verifyMemberPin({ groupId: 'main', memberId: selected.id, pin });
 
-    if (hashHex === selected.pinHash) {
+    if (result.data?.ok) {
       login({ id: selected.id, name: selected.name, avatar: selected.avatar, color: selected.color });
     } else {
       setError('PIN 錯誤，請再試一次');
@@ -880,13 +883,14 @@ git commit -m "feat: add router, bottom nav, member avatar, and page stubs"
 
 ---
 
-## Task 9：Cloud Functions — reportToken & confirmToken
+## Task 9：Cloud Functions — reportToken, confirmToken & verifyMemberPin
 
 **Files:**
 - Create: `functions/package.json`
 - Create: `functions/src/index.js`
 - Create: `functions/src/reportToken.js`
 - Create: `functions/src/confirmToken.js`
+- Create: `functions/src/verifyMemberPin.js`
 
 - [ ] **Step 1: 建立 functions/package.json**
 
@@ -996,7 +1000,38 @@ exports.confirmToken = onCall({ region: 'asia-east1' }, async (request) => {
 });
 ```
 
-- [ ] **Step 4: 建立 functions/src/index.js**
+- [ ] **Step 4: 建立 functions/src/verifyMemberPin.js**
+
+```js
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const admin = require('firebase-admin');
+const crypto = require('crypto');
+
+function hashPin(pin) {
+  return crypto.createHash('sha256').update(pin).digest('hex');
+}
+
+exports.verifyMemberPin = onCall({ region: 'asia-east1' }, async (request) => {
+  const { groupId, memberId, pin } = request.data;
+
+  if (!groupId || !memberId || !pin) {
+    throw new HttpsError('invalid-argument', '缺少必要參數');
+  }
+
+  const authSnap = await admin.firestore()
+    .collection('groups').doc(groupId)
+    .collection('memberAuth').doc(memberId)
+    .get();
+
+  if (!authSnap.exists) {
+    throw new HttpsError('not-found', '成員不存在');
+  }
+
+  return { ok: authSnap.data().pinHash === hashPin(pin) };
+});
+```
+
+- [ ] **Step 5: 建立 functions/src/index.js**
 
 ```js
 const admin = require('firebase-admin');
@@ -1004,20 +1039,22 @@ admin.initializeApp();
 
 const { reportToken } = require('./reportToken');
 const { confirmToken } = require('./confirmToken');
+const { verifyMemberPin } = require('./verifyMemberPin');
 
 exports.reportToken = reportToken;
 exports.confirmToken = confirmToken;
+exports.verifyMemberPin = verifyMemberPin;
 ```
 
-- [ ] **Step 5: 部署 Functions**
+- [ ] **Step 6: 部署 Functions**
 
 ```bash
 npx firebase-tools deploy --only functions --project dazhugong-4f185
 ```
 
-預期：Firebase Console → Functions 出現 `reportToken` 和 `confirmToken` 兩個函數。
+預期：Firebase Console → Functions 出現 `reportToken`、`confirmToken` 和 `verifyMemberPin` 三個函數。
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add functions/

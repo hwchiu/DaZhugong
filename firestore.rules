@@ -11,6 +11,10 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      match /memberAuth/{memberId} {
+        allow read, write: if false;
+      }
+
       match /tokens/{tokenId} {
         allow read: if true;
         allow write: if false;

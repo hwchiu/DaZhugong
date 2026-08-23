@@ -47,7 +47,8 @@ CI/CD：GitHub Actions → firebase deploy
 
 **Phase 1（當前實作）：**
 - 進入 app → 選擇頭像/名字 → 輸入 4 位 PIN → 進入主畫面
-- PIN 以雜湊方式儲存，不明文儲存
+- PIN 以雜湊方式儲存於 `/groups/{groupId}/memberAuth/{memberId}`，不明文儲存
+- 前端僅透過 callable Cloud Function 驗證 PIN，不直接讀取雜湊值
 
 **Phase 2（未來升級）：**
 - 替換登入模組為 Firebase Auth（Google 登入）
@@ -67,8 +68,10 @@ CI/CD：GitHub Actions → firebase deploy
   ├── name: string              ← 顯示名稱
   ├── avatar: string            ← 頭像編號（預設動物圖示）
   ├── color: string             ← 專屬 Token 顏色（hex）
-  ├── pinHash: string           ← PIN 雜湊值
   └── totalTokens: number       ← 累計違規 Token 數
+
+/groups/{groupId}/memberAuth/{memberId}
+  └── pinHash: string           ← PIN 雜湊值（僅後端可用）
 
 /groups/{groupId}/tokens/{tokenId}
   ├── reporterId: string        ← 舉報者 memberId
@@ -98,6 +101,7 @@ CI/CD：GitHub Actions → firebase deploy
    └── 否認 → status: "rejected"，紀錄取消
 
 4. 主畫面透過 Firestore 即時監聽自動更新
+5. PIN 驗證則由 callable Cloud Function 處理，前端不接觸 `pinHash`
 ```
 
 ---
