@@ -6,5 +6,6 @@ frontend/.env.local
 frontend/dist/
 scripts/serviceAccountKey.json
 scripts/members.local.json
+scripts/.secret-writer-test/
 *.log
 .DS_Store

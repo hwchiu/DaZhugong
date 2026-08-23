@@ -1,0 +1,106 @@
+name: Deploy Firebase
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: firebase-production-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Run root tests
+        run: npm test
+
+      - name: Run Firestore emulator tests
+        run: npm run test:rules:emulator
+
+      - name: Run frontend tests
+        run: npm test --prefix frontend
+
+      - name: Write frontend production environment
+        env:
+          FIREBASE_CONFIG: ${{ secrets.FIREBASE_CONFIG }}
+        run: |
+          node -e 'process.stdout.write(process.env.FIREBASE_CONFIG || "")' |
+            node scripts/write-frontend-env.js frontend/.env.production
+
+      - name: Build frontend
+        run: npm run build --prefix frontend
+
+      - name: Select Firebase authentication
+        id: firebase-auth
+        env:
+          SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_DAZHUGONG_4F185 }}
+          LEGACY_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          if [ -n "$SERVICE_ACCOUNT_JSON" ]; then
+            echo "mode=service-account" >> "$GITHUB_OUTPUT"
+          elif [ -n "$LEGACY_TOKEN" ]; then
+            echo "mode=legacy-token" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Configure FIREBASE_SERVICE_ACCOUNT_DAZHUGONG_4F185 (preferred) or FIREBASE_TOKEN (temporary fallback)."
+            exit 1
+          fi
+
+      - name: Authenticate with Google service account
+        if: steps.firebase-auth.outputs.mode == 'service-account'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_DAZHUGONG_4F185 }}
+
+      - name: Deploy with service account
+        if: steps.firebase-auth.outputs.mode == 'service-account'
+        run: >-
+          npx --no-install firebase deploy
+          --only "hosting,firestore:rules"
+          --project dazhugong-4f185
+          --non-interactive
+
+      - name: Deploy with temporary legacy token
+        if: steps.firebase-auth.outputs.mode == 'legacy-token'
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: >-
+          npx --no-install firebase deploy
+          --only "hosting,firestore:rules"
+          --project dazhugong-4f185
+          --non-interactive
+
+      - name: Remove generated frontend environment
+        if: always()
+        run: rm -f frontend/.env.production

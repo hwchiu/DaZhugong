@@ -1,0 +1,65 @@
+name: Seed Firebase Members
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firebase-member-seed
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+
+      - name: Require seed secrets
+        env:
+          SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_DAZHUGONG_4F185 }}
+          MEMBERS_CONFIG: ${{ secrets.MEMBERS_CONFIG }}
+        run: |
+          if [ -z "$SERVICE_ACCOUNT_JSON" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT_DAZHUGONG_4F185 is required for member seeding."
+            exit 1
+          fi
+          if [ -z "$MEMBERS_CONFIG" ]; then
+            echo "::error::MEMBERS_CONFIG is required for member seeding."
+            exit 1
+          fi
+
+      - name: Authenticate with Google service account
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_DAZHUGONG_4F185 }}
+
+      - name: Write private seed configuration
+        env:
+          SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_DAZHUGONG_4F185 }}
+          MEMBERS_CONFIG: ${{ secrets.MEMBERS_CONFIG }}
+        run: |
+          node -e 'process.stdout.write(process.env.MEMBERS_CONFIG || "")' |
+            node scripts/write-json-secret.js scripts/members.local.json
+          node -e 'process.stdout.write(process.env.SERVICE_ACCOUNT_JSON || "")' |
+            node scripts/write-json-secret.js scripts/serviceAccountKey.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Seed members
+        run: npm run seed
+
+      - name: Remove private seed configuration
+        if: always()
+        run: rm -f scripts/members.local.json scripts/serviceAccountKey.json
