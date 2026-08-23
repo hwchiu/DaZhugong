@@ -3,18 +3,42 @@
   "members": [
     {
       "id": "member1",
-      "authUid": "member_member1",
-      "name": "Example Person",
+      "authUid": "dazhugong_main_member1",
+      "name": "你",
       "avatar": "pig",
       "color": "#FF6B8A",
       "pin": "<SET_UNIQUE_PIN>"
     },
     {
       "id": "member2",
-      "authUid": "member_member2",
-      "name": "Example Person 2",
+      "authUid": "dazhugong_main_member2",
+      "name": "Kevin",
       "avatar": "cat",
       "color": "#4A90E2",
+      "pin": "<SET_UNIQUE_PIN>"
+    },
+    {
+      "id": "member3",
+      "authUid": "dazhugong_main_member3",
+      "name": "Amy",
+      "avatar": "fox",
+      "color": "#7ED957",
+      "pin": "<SET_UNIQUE_PIN>"
+    },
+    {
+      "id": "member4",
+      "authUid": "dazhugong_main_member4",
+      "name": "Jamie",
+      "avatar": "bear",
+      "color": "#F5A623",
+      "pin": "<SET_UNIQUE_PIN>"
+    },
+    {
+      "id": "member5",
+      "authUid": "dazhugong_main_member5",
+      "name": "Vivian",
+      "avatar": "rabbit",
+      "color": "#9B59B6",
       "pin": "<SET_UNIQUE_PIN>"
     }
   ]

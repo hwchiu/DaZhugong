@@ -299,7 +299,7 @@ npm run seed
 ```
 
 預期：
-- Firebase Authentication 有 5 個 UID：`dazhugong_main_member1` 至 `dazhugong_main_member5`。
+- Firebase Authentication 有 5 個 UID：`dazhugong_main_member1` 至 `dazhugong_main_member5`，分別對應 `你`、`Kevin`、`Amy`、`Jamie`、`Vivian`。
 - `groups/main/members/*` 含 `authUid`，不含 `pinHash`。
 - `groups/main/memberAuth/*` 含 bcrypt `pinHash` 與節流欄位，客戶端不可讀。
 
