@@ -1,0 +1,271 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Background & Utility Styles -->
+    <filter id="vinyl-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="15" flood-color="#7c2d12" flood-opacity="0.08" />
+    </filter>
+    <filter id="soft-blur" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" />
+    </filter>
+
+    <!-- Base Vinyl 3D Radial Gradients -->
+    <!-- White Vinyl (Rabbit, Snouts) -->
+    <radialGradient id="vinyl-white" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="65%" stop-color="#f8fafc" />
+      <stop offset="100%" stop-color="#e2e8f0" />
+    </radialGradient>
+    <!-- Soft Lavender-Grey Vinyl (Cat) -->
+    <radialGradient id="vinyl-cat" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#f1f5f9" />
+      <stop offset="60%" stop-color="#e2e8f0" />
+      <stop offset="100%" stop-color="#cbd5e1" />
+    </radialGradient>
+    <!-- Soft Green Vinyl (Frog) -->
+    <radialGradient id="vinyl-frog" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#bef264" />
+      <stop offset="60%" stop-color="#a3e635" />
+      <stop offset="100%" stop-color="#84cc16" />
+    </radialGradient>
+    <!-- Soft Milk Tea Bear Vinyl (Bear) -->
+    <radialGradient id="vinyl-bear" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#fed7aa" />
+      <stop offset="60%" stop-color="#fdbb2d" stop-color-override="#f97316" /> <!-- Fallback to rich tan -->
+      <stop offset="65%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#b45309" />
+    </radialGradient>
+    <radialGradient id="vinyl-bear-fixed" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#ffedd5" />
+      <stop offset="60%" stop-color="#fed7aa" />
+      <stop offset="100%" stop-color="#ca8a04" />
+    </radialGradient>
+    <!-- Shiba Honey-Orange Vinyl (Shiba) -->
+    <radialGradient id="vinyl-shiba" cx="35%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#ffedd5" />
+      <stop offset="55%" stop-color="#f97316" />
+      <stop offset="100%" stop-color="#c2410c" />
+    </radialGradient>
+
+    <!-- Pink Inner Ear & Blush -->
+    <radialGradient id="vinyl-pink-inner" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fecdd3" />
+      <stop offset="100%" stop-color="#fda4af" />
+    </radialGradient>
+    <radialGradient id="blush-gradient" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fda4af" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#fda4af" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Collar Gradients -->
+    <linearGradient id="collar-coral" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fca5a5" />
+      <stop offset="100%" stop-color="#ef4444" />
+    </linearGradient>
+    <linearGradient id="collar-blue" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7dd3fc" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="collar-green" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#bef264" />
+      <stop offset="100%" stop-color="#65a30d" />
+    </linearGradient>
+    <linearGradient id="collar-purple" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d8b4fe" />
+      <stop offset="100%" stop-color="#8b5cf6" />
+    </linearGradient>
+    <linearGradient id="collar-orange" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fde047" />
+      <stop offset="100%" stop-color="#ea580c" />
+    </linearGradient>
+
+    <!-- Golden Bells / Tags -->
+    <radialGradient id="gold-bell" cx="35%" cy="30%" r="65%">
+      <stop offset="0%" stop-color="#fef08a" />
+      <stop offset="60%" stop-color="#eab308" />
+      <stop offset="100%" stop-color="#ca8a04" />
+    </radialGradient>
+
+    <!-- Eyes (Same for all) -->
+    <g id="dot-eye">
+      <!-- Dark matte eye -->
+      <circle cx="0" cy="0" r="10" fill="#334155" />
+      <!-- Tiny white highlight -->
+      <circle cx="-3" cy="-3" r="3" fill="#ffffff" />
+    </g>
+  </defs>
+
+  <!-- BACKGROUND: Plain Soft Pastel Cream -->
+  <rect width="1600" height="900" fill="#faf6f0" />
+
+  <!-- MASCOT 1: RABBIT (Coral Pink Collar) -->
+  <g transform="translate(240, 450)" filter="url(#vinyl-shadow)">
+    <!-- Ears -->
+    <g transform="rotate(-8 -40 -120)">
+      <rect x="-22" y="-180" width="44" height="150" rx="22" fill="url(#vinyl-white)" stroke="#cbd5e1" stroke-opacity="0.3" stroke-width="1.5" />
+      <rect x="-12" y="-165" width="24" height="120" rx="12" fill="url(#vinyl-pink-inner)" />
+    </g>
+    <g transform="rotate(8 40 -120)">
+      <rect x="-22" y="-180" width="44" height="150" rx="22" fill="url(#vinyl-white)" stroke="#cbd5e1" stroke-opacity="0.3" stroke-width="1.5" />
+      <rect x="-12" y="-165" width="24" height="120" rx="12" fill="url(#vinyl-pink-inner)" />
+    </g>
+
+    <!-- Head Body -->
+    <ellipse cx="0" cy="0" rx="100" ry="90" fill="url(#vinyl-white)" stroke="#cbd5e1" stroke-opacity="0.3" stroke-width="2" />
+
+    <!-- Simple dot eyes -->
+    <use href="#dot-eye" x="-32" y="5" />
+    <use href="#dot-eye" x="32" y="5" />
+
+    <!-- Soft pink blush cheeks -->
+    <ellipse cx="-52" cy="22" rx="16" ry="10" fill="url(#blush-gradient)" filter="url(#soft-blur)" />
+    <ellipse cx="52" cy="22" rx="16" ry="10" fill="url(#blush-gradient)" filter="url(#soft-blur)" />
+
+    <!-- Rabbit Snout & Mouth -->
+    <path d="M -8,22 Q 0,16 8,22" fill="none" stroke="#475569" stroke-width="4.5" stroke-linecap="round" />
+    <path d="M 0,20 L 0,28 Q -6,34 -12,31" fill="none" stroke="#475569" stroke-width="4" stroke-linecap="round" />
+    <path d="M 0,28 Q 6,34 12,31" fill="none" stroke="#475569" stroke-width="4" stroke-linecap="round" />
+    <polygon points="-5,16 5,16 0,21" fill="#fda4af" />
+
+    <!-- Collar (Coral Pink) -->
+    <path d="M -50,78 Q 0,105 50,78 L 44,98 Q 0,125 -44,98 Z" fill="url(#collar-coral)" />
+    <!-- Bell -->
+    <circle cx="0" cy="112" r="14" fill="url(#gold-bell)" />
+    <circle cx="0" cy="116" r="3" fill="#854d0e" />
+  </g>
+
+  <!-- MASCOT 2: CAT (Sky Blue Collar) -->
+  <g transform="translate(520, 450)" filter="url(#vinyl-shadow)">
+    <!-- Ears -->
+    <polygon points="-85,-40 -95,-130 -25,-85" fill="url(#vinyl-cat)" stroke="#cbd5e1" stroke-opacity="0.3" stroke-width="1.5" />
+    <polygon points="-75,-50 -83,-115 -35,-82" fill="url(#vinyl-pink-inner)" />
+
+    <polygon points="85,-40 95,-130 25,-85" fill="url(#vinyl-cat)" stroke="#cbd5e1" stroke-opacity="0.3" stroke-width="1.5" />
+    <polygon points="75,-50 83,-115 35,-82" fill="url(#vinyl-pink-inner)" />
+
+    <!-- Head Body -->
+    <ellipse cx="0" cy="0" rx="104" ry="85" fill="url(#vinyl-cat)" stroke="#cbd5e1" stroke-opacity="0.3" stroke-width="2" />
+
+    <!-- Simple dot eyes -->
+    <use href="#dot-eye" x="-34" y="5" />
+    <use href="#dot-eye" x="34" y="5" />
+
+    <!-- Soft pink blush cheeks -->
+    <ellipse cx="-55" cy="22" rx="16" ry="10" fill="url(#blush-gradient)" filter="url(#soft-blur)" />
+    <ellipse cx="55" cy="22" rx="16" ry="10" fill="url(#blush-gradient)" filter="url(#soft-blur)" />
+
+    <!-- Whiskers (Subtle, matte) -->
+    <line x1="-80" y1="15" x2="-105" y2="10" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" />
+    <line x1="-80" y1="27" x2="-108" y2="28" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" />
+    <line x1="80" y1="15" x2="105" y2="10" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" />
+    <line x1="80" y1="27" x2="108" y2="28" stroke="#94a3b8" stroke-width="3" stroke-linecap="round" />
+
+    <!-- Mouth & Nose -->
+    <polygon points="-4,18 4,18 0,22" fill="#fda4af" />
+    <path d="M -12,25 Q -6,31 0,25 Q 6,31 12,25" fill="none" stroke="#475569" stroke-width="4" stroke-linecap="round" />
+
+    <!-- Collar (Sky Blue) -->
+    <path d="M -52,73 Q 0,102 52,73 L 46,93 Q 0,122 -46,93 Z" fill="url(#collar-blue)" />
+    <!-- Bell -->
+    <circle cx="0" cy="108" r="14" fill="url(#gold-bell)" />
+    <circle cx="0" cy="112" r="3" fill="#854d0e" />
+  </g>
+
+  <!-- MASCOT 3: FROG (Leaf Green Collar) -->
+  <g transform="translate(800, 450)" filter="url(#vinyl-shadow)">
+    <!-- Eye bulges -->
+    <circle cx="-50" cy="-60" r="38" fill="url(#vinyl-frog)" stroke="#a3e635" stroke-opacity="0.3" stroke-width="1.5" />
+    <circle cx="50" cy="-60" r="38" fill="url(#vinyl-frog)" stroke="#a3e635" stroke-opacity="0.3" stroke-width="1.5" />
+
+    <!-- Head Body -->
+    <ellipse cx="0" cy="0" rx="108" ry="80" fill="url(#vinyl-frog)" stroke="#a3e635" stroke-opacity="0.3" stroke-width="2" />
+
+    <!-- Simple dot eyes (placed higher, slightly overlapping the bulges for a frog look) -->
+    <use href="#dot-eye" x="-46" y="-36" />
+    <use href="#dot-eye" x="46" y="-36" />
+
+    <!-- Soft pink blush cheeks -->
+    <ellipse cx="-60" cy="12" rx="18" ry="11" fill="url(#blush-gradient)" filter="url(#soft-blur)" />
+    <ellipse cx="60" cy="12" rx="18" ry="11" fill="url(#blush-gradient)" filter="url(#soft-blur)" />
+
+    <!-- Frog Smiling Mouth -->
+    <path d="M -35,15 Q 0,42 35,15" fill="none" stroke="#3f6212" stroke-width="5" stroke-linecap="round" />
+
+    <!-- Collar (Leaf Green) -->
+    <path d="M -54,69 Q 0,98 54,69 L 48,89 Q 0,118 -48,89 Z" fill="url(#collar-green)" />
+    <!-- Bell -->
+    <circle cx="0" cy="104" r="14" fill="url(#gold-bell)" />
+    <circle cx="0" cy="108" r="3" fill="#854d0e" />
+  </g>
+
+  <!-- MASCOT 4: BEAR (Grape Purple Collar) -->
+  <g transform="translate(1080, 450)" filter="url(#vinyl-shadow)">
+    <!-- Ears -->
+    <circle cx="-68" cy="-68" r="34" fill="url(#vinyl-bear-fixed)" stroke="#b45309" stroke-opacity="0.25" stroke-width="1.5" />
+    <circle cx="-68" cy="-68" r="20" fill="url(#vinyl-pink-inner)" />
+
+    <circle cx="68" cy="-68" r="34" fill="url(#vinyl-bear-fixed)" stroke="#b45309" stroke-opacity="0.25" stroke-width="1.5" />
+    <circle cx="68" cy="-68" r="20" fill="url(#vinyl-pink-inner)" />
+
+    <!-- Head Body -->
+    <ellipse cx="0" cy="0" rx="100" ry="90" fill="url(#vinyl-bear-fixed)" stroke="#b45309" stroke-opacity="0.25" stroke-width="2" />
+
+    <!-- White Snout Patch -->
+    <ellipse cx="0" cy="28" rx="34" ry="24" fill="url(#vinyl-white)" />
+
+    <!-- Simple dot eyes -->
+    <use href="#dot-eye" x="-32" y="5" />
+    <use href="#dot-eye" x="32" y="5" />
+
+    <!-- Soft pink blush cheeks -->
+    <ellipse cx="-52" cy="22" rx="16" ry="10" fill="url(#blush-gradient)" filter="url(#soft-blur)" />
+    <ellipse cx="52" cy="22" rx="16" ry="10" fill="url(#blush-gradient)" filter="url(#soft-blur)" />
+
+    <!-- Nose & Mouth -->
+    <ellipse cx="0" cy="18" rx="10" ry="7" fill="#334155" />
+    <path d="M 0,23 L 0,31 Q -6,37 -11,33" fill="none" stroke="#475569" stroke-width="4.5" stroke-linecap="round" />
+    <path d="M 0,31 Q 6,37 11,33" fill="none" stroke="#475569" stroke-width="4.5" stroke-linecap="round" />
+
+    <!-- Collar (Grape Purple) -->
+    <path d="M -50,78 Q 0,105 50,78 L 44,98 Q 0,125 -44,98 Z" fill="url(#collar-purple)" />
+    <!-- Bell -->
+    <circle cx="0" cy="112" r="14" fill="url(#gold-bell)" />
+    <circle cx="0" cy="116" r="3" fill="#854d0e" />
+  </g>
+
+  <!-- MASCOT 5: SHIBA INU DOG (Marigold Orange Collar) -->
+  <g transform="translate(1360, 450)" filter="url(#vinyl-shadow)">
+    <!-- Ears -->
+    <polygon points="-85,-40 -92,-135 -15,-80" fill="url(#vinyl-shiba)" stroke="#c2410c" stroke-opacity="0.25" stroke-width="1.5" />
+    <polygon points="-75,-48 -80,-118 -25,-78" fill="url(#vinyl-pink-inner)" />
+
+    <polygon points="85,-40 92,-135 15,-80" fill="url(#vinyl-shiba)" stroke="#c2410c" stroke-opacity="0.25" stroke-width="1.5" />
+    <polygon points="75,-48 80,-118 25,-78" fill="url(#vinyl-pink-inner)" />
+
+    <!-- Head Body -->
+    <ellipse cx="0" cy="0" rx="102" ry="90" fill="url(#vinyl-shiba)" stroke="#c2410c" stroke-opacity="0.2" stroke-width="2" />
+
+    <!-- White Shiba Cheek Patches -->
+    <path d="M -90,20 C -90,60 -50,75 -30,45 C -15,30 -20,10 -50,10 C -75,10 -90,0 -90,20 Z" fill="url(#vinyl-white)" opacity="0.9" />
+    <path d="M 90,20 C 90,60 50,75 30,45 C 15,30 20,10 50,10 C 75,10 90,0 90,20 Z" fill="url(#vinyl-white)" opacity="0.9" />
+    <ellipse cx="0" cy="32" rx="36" ry="26" fill="url(#vinyl-white)" />
+
+    <!-- Simple dot eyes -->
+    <use href="#dot-eye" x="-32" y="5" />
+    <use href="#dot-eye" x="32" y="5" />
+
+    <!-- Soft pink blush cheeks -->
+    <ellipse cx="-52" cy="22" rx="16" ry="10" fill="url(#blush-gradient)" filter="url(#soft-blur)" />
+    <ellipse cx="52" cy="22" rx="16" ry="10" fill="url(#blush-gradient)" filter="url(#soft-blur)" />
+
+    <!-- Nose & Mouth (Happy dog face) -->
+    <ellipse cx="0" cy="18" rx="9" ry="6.5" fill="#334155" />
+    <path d="M 0,23 L 0,29 Q -6,35 -12,31" fill="none" stroke="#475569" stroke-width="4.5" stroke-linecap="round" />
+    <path d="M 0,29 Q 6,35 12,31" fill="none" stroke="#475569" stroke-width="4.5" stroke-linecap="round" />
+
+    <!-- Collar (Marigold Orange) -->
+    <path d="M -50,78 Q 0,105 50,78 L 44,98 Q 0,125 -44,98 Z" fill="url(#collar-orange)" />
+    <!-- Bell -->
+    <circle cx="0" cy="112" r="14" fill="url(#gold-bell)" />
+    <circle cx="0" cy="116" r="3" fill="#854d0e" />
+  </g>
+</svg>
