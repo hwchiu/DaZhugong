@@ -41,6 +41,7 @@ test('public reads work but unauthenticated token writes fail', { skip: !shouldR
   await testEnv.withSecurityRulesDisabled(async (context) => {
     await setDoc(doc(context.firestore(), 'groups/main/members/member1'), {
       authUid: 'uid-1',
+      active: true,
       name: 'One',
       loginEmail: 'uid-1@dazhugong.invalid',
     });
@@ -63,11 +64,13 @@ test('authenticated reporter creates pending token and target confirms with matc
     const db = context.firestore();
     await setDoc(doc(db, 'groups/main/members/member1'), {
       authUid: 'uid-1',
+      active: true,
       name: 'One',
       loginEmail: 'uid-1@dazhugong.invalid',
     });
     await setDoc(doc(db, 'groups/main/members/member2'), {
       authUid: 'uid-2',
+      active: true,
       name: 'Two',
       loginEmail: 'uid-2@dazhugong.invalid',
     });
@@ -105,8 +108,8 @@ test('authenticated reporter creates pending token and target confirms with matc
 test('confirmation without report and spoofed reporter writes fail', { skip: !shouldRun }, async () => {
   await testEnv.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
-    await setDoc(doc(db, 'groups/main/members/member1'), { authUid: 'uid-1' });
-    await setDoc(doc(db, 'groups/main/members/member2'), { authUid: 'uid-2' });
+    await setDoc(doc(db, 'groups/main/members/member1'), { authUid: 'uid-1', active: true });
+    await setDoc(doc(db, 'groups/main/members/member2'), { authUid: 'uid-2', active: true });
     await setDoc(doc(db, 'groups/main/tokens/token-1'), {
       targetId: 'member2',
       reporterId: 'member1',
@@ -132,5 +135,45 @@ test('confirmation without report and spoofed reporter writes fail', { skip: !sh
     status: 'confirmed',
     confirmedAt: serverTimestamp(),
     resolvedAt: serverTimestamp(),
+  }));
+});
+
+test('inactive members cannot create or resolve tokens and active reporters cannot target them', { skip: !shouldRun }, async () => {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'groups/main/members/member1'), { authUid: 'uid-1', active: false });
+    await setDoc(doc(db, 'groups/main/members/member2'), { authUid: 'uid-2', active: true });
+    await setDoc(doc(db, 'groups/main/tokens/token-1'), {
+      targetId: 'member1',
+      reporterId: 'member2',
+      status: 'pending',
+      createdAt: new Date(),
+      confirmedAt: null,
+      resolvedAt: null,
+    });
+  });
+
+  const inactiveDb = testEnv.authenticatedContext('uid-1').firestore();
+  await assertFails(setDoc(doc(inactiveDb, 'groups/main/tokens/inactive-reporter'), {
+    targetId: 'member2',
+    reporterId: 'member1',
+    status: 'pending',
+    createdAt: serverTimestamp(),
+    confirmedAt: null,
+    resolvedAt: null,
+  }));
+  await assertFails(updateDoc(doc(inactiveDb, 'groups/main/tokens/token-1'), {
+    status: 'rejected',
+    resolvedAt: serverTimestamp(),
+  }));
+
+  const activeDb = testEnv.authenticatedContext('uid-2').firestore();
+  await assertFails(setDoc(doc(activeDb, 'groups/main/tokens/inactive-target'), {
+    targetId: 'member1',
+    reporterId: 'member2',
+    status: 'pending',
+    createdAt: serverTimestamp(),
+    confirmedAt: null,
+    resolvedAt: null,
   }));
 });

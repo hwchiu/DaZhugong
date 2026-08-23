@@ -107,23 +107,35 @@ function buildMemberPayload(member) {
     name: member.name,
     avatar: member.avatar,
     color: member.color,
+    active: true,
   };
 }
 
 async function preflightMemberAuthUids(groupRef, members) {
-  const memberRefs = members.map((member) => groupRef.collection('members').doc(member.id));
-  const snapshots = await Promise.all(memberRefs.map((ref) => ref.get()));
+  const membersRef = groupRef.collection('members');
+  const snapshot = await membersRef.get();
+  const existingMembers = new Map(snapshot.docs.map((memberSnapshot) => [memberSnapshot.id, memberSnapshot]));
+  const configuredIds = new Set(members.map((member) => member.id));
 
-  snapshots.forEach((snapshot, index) => {
-    const member = members[index];
-    const existingAuthUid = normalizeMemberText(snapshot.get('authUid'));
+  for (const member of members) {
+    const existingMember = existingMembers.get(member.id);
+    const existingAuthUid = normalizeMemberText(existingMember?.get('authUid'));
 
     if (existingAuthUid && existingAuthUid !== member.authUid) {
       throw new Error(`Member ${member.id} authUid does not match configured value.`);
     }
-  });
+  }
 
-  return memberRefs;
+  return {
+    memberRefs: members.map((member) => membersRef.doc(member.id)),
+    removedMembers: snapshot.docs
+      .filter((memberSnapshot) => !configuredIds.has(memberSnapshot.id))
+      .map((memberSnapshot) => ({
+        id: memberSnapshot.id,
+        authUid: normalizeMemberText(memberSnapshot.get('authUid')),
+        ref: memberSnapshot.ref,
+      })),
+  };
 }
 
 async function writeMemberDoc(firestore, memberRef, member) {
@@ -151,6 +163,7 @@ async function ensureAuthUser(auth, member) {
     email: deriveLoginEmail(member.authUid),
     displayName: member.name,
     password: deriveFirebasePassword(member.authUid, member.pin),
+    disabled: false,
   };
 
   try {
@@ -164,6 +177,37 @@ async function ensureAuthUser(auth, member) {
       });
     }
     throw error;
+  }
+}
+
+async function deactivateMemberDoc(firestore, removedMember) {
+  return firestore.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(removedMember.ref);
+    if (!snapshot.exists) {
+      return '';
+    }
+
+    const currentAuthUid = normalizeMemberText(snapshot.get('authUid'));
+    if (currentAuthUid !== removedMember.authUid) {
+      throw new Error(`Member ${removedMember.id} authUid changed during offboarding.`);
+    }
+
+    await transaction.set(removedMember.ref, { active: false }, { merge: true });
+    return currentAuthUid;
+  });
+}
+
+async function disableAuthUser(auth, authUid) {
+  if (!authUid) {
+    return;
+  }
+
+  try {
+    await auth.updateUser(authUid, { disabled: true });
+  } catch (error) {
+    if (!error || error.code !== 'auth/user-not-found') {
+      throw error;
+    }
   }
 }
 
@@ -192,7 +236,15 @@ async function seed(options = {}, deps = {}) {
   const groupSnapshot = await groupRef.get();
   const existingGroup = groupSnapshot.exists ? groupSnapshot.data() : {};
 
-  await preflightMemberAuthUids(groupRef, members);
+  const { removedMembers } = await preflightMemberAuthUids(groupRef, members);
+  const configuredAuthUids = new Set(members.map((member) => member.authUid));
+
+  for (const removedMember of removedMembers) {
+    const removedAuthUid = await deactivateMemberDoc(firestore, removedMember);
+    if (!configuredAuthUids.has(removedAuthUid)) {
+      await disableAuthUser(auth, removedAuthUid);
+    }
+  }
 
   await groupRef.set(buildGroupPayload({
     groupId,
@@ -227,6 +279,8 @@ if (require.main === module) {
 
 module.exports = {
   buildMemberPayload,
+  deactivateMemberDoc,
+  disableAuthUser,
   ensureAuthUser,
   validateMemberConfig,
   buildGroupPayload,

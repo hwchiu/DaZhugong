@@ -45,6 +45,7 @@ function renderLogin({
       avatar: 'pig',
       color: '#FF6B8A',
       totalTokens: 3,
+      active: true,
     },
     {
       id: 'member-2',
@@ -54,6 +55,7 @@ function renderLogin({
       avatar: 'cat',
       color: '#4A90E2',
       totalTokens: 8,
+      active: true,
     },
   ],
   loading = false,
@@ -140,6 +142,30 @@ describe('Login', () => {
 
     expect(pinInput.value).toBe('1234');
     expect(submitButton.disabled).toBe(false);
+  });
+
+  it('hides inactive members from login selection', () => {
+    renderLogin({
+      members: [
+        {
+          id: 'active-member',
+          authUid: 'active-uid',
+          loginEmail: 'active-uid@dazhugong.invalid',
+          name: 'Active Member',
+          active: true,
+        },
+        {
+          id: 'inactive-member',
+          authUid: 'inactive-uid',
+          loginEmail: 'inactive-uid@dazhugong.invalid',
+          name: 'Inactive Member',
+          active: false,
+        },
+      ],
+    });
+
+    expect(screen.getByRole('button', { name: '選擇成員 Active Member' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '選擇成員 Inactive Member' })).toBe(null);
   });
 
   it('locks member selection and PIN input while the login request is pending', async () => {

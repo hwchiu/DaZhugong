@@ -24,6 +24,7 @@ const currentMember = {
   id: 'member-1',
   authUid: 'uid-1',
   name: 'Member One',
+  active: true,
 };
 
 beforeEach(() => {
@@ -32,6 +33,27 @@ beforeEach(() => {
 });
 
 describe('reportToken', () => {
+  it('rejects an inactive current member before writing', async () => {
+    await expect(reportToken({
+      groupId: 'main',
+      targetId: 'member-2',
+      currentMember: { ...currentMember, active: false },
+    })).rejects.toThrow(/inactive/i);
+
+    expect(firestoreMock.addDoc).not.toHaveBeenCalled();
+  });
+
+  it('rejects an inactive target member when target data is available', async () => {
+    await expect(reportToken({
+      groupId: 'main',
+      targetId: 'member-2',
+      targetMember: { id: 'member-2', active: false },
+      currentMember,
+    })).rejects.toThrow(/inactive/i);
+
+    expect(firestoreMock.addDoc).not.toHaveBeenCalled();
+  });
+
   it('prevents spoofing when Firebase Auth does not match the current member', async () => {
     firebaseState.auth.currentUser = { uid: 'attacker' };
 
@@ -68,6 +90,18 @@ describe('reportToken', () => {
 });
 
 describe('resolveToken', () => {
+  it('rejects an inactive resolving member before writing', async () => {
+    await expect(resolveToken({
+      groupId: 'main',
+      tokenId: 'token-1',
+      action: 'reject',
+      currentMember: { ...currentMember, active: false },
+    })).rejects.toThrow(/inactive/i);
+
+    expect(firestoreMock.updateDoc).not.toHaveBeenCalled();
+    expect(firestoreMock.writeBatch).not.toHaveBeenCalled();
+  });
+
   it('confirms with one atomic batch that updates the token and creates report/tokenId', async () => {
     const batch = { update: vi.fn(), set: vi.fn(), commit: vi.fn().mockResolvedValue(undefined) };
     firestoreMock.writeBatch.mockReturnValue(batch);

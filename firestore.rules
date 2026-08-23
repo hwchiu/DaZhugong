@@ -14,9 +14,14 @@ service cloud.firestore {
       return /databases/$(database)/documents/groups/$(groupId)/reports/$(tokenId);
     }
 
+    function memberIsActive(groupId, memberId) {
+      return exists(memberPath(groupId, memberId))
+        && get(memberPath(groupId, memberId)).data.active == true;
+    }
+
     function isMember(groupId, memberId) {
       return request.auth != null
-        && exists(memberPath(groupId, memberId))
+        && memberIsActive(groupId, memberId)
         && get(memberPath(groupId, memberId)).data.authUid == request.auth.uid;
     }
 
@@ -49,7 +54,7 @@ service cloud.firestore {
         && request.resource.data.targetId is string
         && request.resource.data.reporterId is string
         && request.resource.data.targetId != request.resource.data.reporterId
-        && exists(memberPath(groupId, request.resource.data.targetId))
+        && memberIsActive(groupId, request.resource.data.targetId)
         && isMember(groupId, request.resource.data.reporterId)
         && request.resource.data.status == 'pending'
         && request.resource.data.createdAt == request.time
@@ -75,6 +80,8 @@ service cloud.firestore {
     function validTokenUpdate(groupId, tokenId) {
       return hasExactTokenFields(request.resource.data)
         && resource.data.status == 'pending'
+        && memberIsActive(groupId, resource.data.reporterId)
+        && memberIsActive(groupId, resource.data.targetId)
         && isMember(groupId, resource.data.targetId)
         && immutableTokenIdentity()
         && (
@@ -109,6 +116,8 @@ service cloud.firestore {
           == get(tokenPath(groupId, tokenId)).data.createdAt
         && request.resource.data.targetId == getAfter(tokenPath(groupId, tokenId)).data.targetId
         && request.resource.data.reporterId == getAfter(tokenPath(groupId, tokenId)).data.reporterId
+        && memberIsActive(groupId, request.resource.data.reporterId)
+        && memberIsActive(groupId, request.resource.data.targetId)
         && isMember(groupId, request.resource.data.targetId);
     }
 

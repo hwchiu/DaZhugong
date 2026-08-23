@@ -31,16 +31,18 @@ UI 仍讓使用者選擇成員並輸入唯一的私有 4 位 PIN，但底層映�
 
 Seed 流程：
 
-1. 在任何寫入前讀取所有既有 member 文件，確認 `authUid` 不變。
+1. 在任何寫入前列出所有既有 member 文件，確認仍在設定中的 member `authUid` 不變，並一次決定需停用的成員。
 2. 由穩定 `authUid` 衍生 synthetic email，由 `authUid` 與 PIN 衍生 Firebase password。
-3. Auth user 不存在時建立；存在時更新 email、display name 與 password，讓 PIN 變更可重跑 seed 生效。
-4. 以 transaction 建立或 merge member 文件，再次檢查 `authUid`，避免 preflight 後的競態覆寫。
-5. 不寫入 `memberAuth`；舊環境若仍有此 collection，Security Rules 永久 deny-all。
+3. 設定中的成員寫入 `active: true`；Auth user 不存在時建立，存在時以 `disabled: false` 重新啟用並更新 email、display name 與 password。
+4. 既有但已從 `members.local` 移除的 member 文件只 merge `active: false`，保留姓名、歷史欄位、reports 與 tokens；再依該文件既有 `authUid` 停用 Firebase Auth。
+5. 停用前以 transaction 重讀 member 並確認 `authUid` 未在 preflight 後改變。任何目前設定中的 `authUid` 都列入保護集合，即使舊資料重複引用也不得被停用。
+6. 設定中的 member 亦以 transaction 建立或 merge，再次檢查 `authUid`，避免競態覆寫。
+7. 不寫入 `memberAuth`；舊環境若仍有此 collection，Security Rules 永久 deny-all。
 
 公開 member 文件只包含：
 
 ```text
-authUid, loginEmail, name, avatar, color
+authUid, loginEmail, name, avatar, color, active
 ```
 
 不得包含 PIN、hash 或 password。舊 `totalTokens` 欄位可保留，但不再是權威資料。
@@ -52,7 +54,7 @@ authUid, loginEmail, name, avatar, color
   name, lunchStart, lunchEnd, memberIds
 
 /groups/{groupId}/members/{memberId}
-  authUid, loginEmail, name, avatar, color
+  authUid, loginEmail, name, avatar, color, active
 
 /groups/{groupId}/tokens/{tokenId}
   targetId, reporterId, status
@@ -71,6 +73,9 @@ authUid, loginEmail, name, avatar, color
 - `reportToken`：以 `addDoc` 建立 pending token，reporterId 只取自 `currentMember.id`。
 - `resolveToken(..., action: 'reject')`：只更新 token 為 rejected，`resolvedAt` 使用 server timestamp。
 - `resolveToken(..., action: 'confirm')`：讀取 pending token，使用單一 atomic batch 更新 token，並以 tokenId 建立對應 report。所有時間使用 server timestamp。
+- 當 `currentMember` 或呼叫端已提供的 target member 資料顯示 `active: false` 時，本機先拒絕操作；Security Rules 仍是權威防線。
+
+登入頁只顯示 active member。`useGroup` 仍保留完整 member 集合，讓統計與歷史畫面可以解析已離隊成員名稱。
 
 正式 Vote/Pending 頁面不在本次 migration 範圍；服務與規則先建立供後續頁面使用。
 
@@ -80,8 +85,8 @@ Rules 使用 `rules_version = '2'`：
 
 - group、members、tokens、reports 保留公開讀取，支援登入前成員選擇。
 - group、member、memberAuth 客戶端寫入全部拒絕。
-- token create 僅允許已登入且 UID 對應 reporter member 的使用者；欄位必須完全吻合、target 存在且不同、狀態為 pending、時間為 `request.time`。
-- token update 僅允許 target member；身分與 createdAt 不可變。
+- token create 僅允許已登入、active 且 UID 對應 reporter member 的使用者；target 也必須 active，欄位必須完全吻合、target 不同、狀態為 pending、時間為 `request.time`。
+- token update 僅允許 active target member；原 reporter 與 target 都必須維持 active，身分與 createdAt 不可變。
 - reject 必須是 pending → rejected，resolvedAt 為 `request.time`，且不存在 report。
 - confirm 必須是 pending → confirmed，confirmedAt/resolvedAt 為 `request.time`，且同一次 atomic write 的 `getAfter` 可見完全吻合的 `reports/{tokenId}`。
 - report 只能 create，必須與同批有效 confirmation 相符；禁止 update/delete。
@@ -103,7 +108,7 @@ Rules 使用 `rules_version = '2'`：
 ## 部署前必要條件
 
 1. Firebase Console 啟用 Email/Password provider。
-2. 使用私有 `scripts/members.local.json` 與 service account 執行 seed。
+2. 使用私有 `scripts/members.local.json` 與 service account 執行 seed；必須先完成 active 欄位與 Auth 停用同步，再部署要求 `active: true` 的 Rules。
 3. 設定完整 Firebase Web config。
 4. 安裝 Java 21+ 後執行 Firestore Emulator rules tests。
 5. 建立上述兩個 GitHub Secrets，再另行實作 CI。

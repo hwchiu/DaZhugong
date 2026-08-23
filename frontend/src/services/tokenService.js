@@ -10,6 +10,10 @@ import {
 import { auth, db } from '../firebase.js';
 
 function assertAuthenticatedMember(currentMember) {
+  if (currentMember?.active === false) {
+    throw new Error('The current member is inactive.');
+  }
+
   if (
     !currentMember?.id
     || !currentMember?.authUid
@@ -20,11 +24,17 @@ function assertAuthenticatedMember(currentMember) {
   }
 }
 
-export async function reportToken({ groupId, targetId, currentMember }) {
+export async function reportToken({ groupId, targetId, targetMember, currentMember }) {
   assertAuthenticatedMember(currentMember);
 
   if (!groupId || !targetId || targetId === currentMember.id) {
     throw new Error('A different target member is required.');
+  }
+  if (targetMember && targetMember.id !== targetId) {
+    throw new Error('The target member identity is invalid.');
+  }
+  if (targetMember?.active === false) {
+    throw new Error('The target member is inactive.');
   }
 
   return addDoc(collection(db, 'groups', groupId, 'tokens'), {

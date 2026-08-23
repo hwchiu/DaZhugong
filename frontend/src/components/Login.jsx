@@ -51,9 +51,13 @@ export default function Login() {
   const [hasDismissedAuthError, setHasDismissedAuthError] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
+  const activeMembers = members.filter((member) => member.active !== false);
+  const selectedMemberIsActive = Boolean(
+    selectedMember && activeMembers.some((member) => member.id === selectedMember.id),
+  );
   const isInteractionLocked = membersLoading || membersError || isLoggingIn;
-  const visibleSelectedMemberId = (pendingMember ?? selectedMember)?.id;
-  const canSubmit = Boolean(selectedMember) && pin.length === 4 && !membersLoading && !membersError && !isLoggingIn;
+  const visibleSelectedMemberId = pendingMember?.id ?? (selectedMemberIsActive ? selectedMember.id : undefined);
+  const canSubmit = selectedMemberIsActive && pin.length === 4 && !membersLoading && !membersError && !isLoggingIn;
   const visibleAuthError = hasDismissedAuthError ? '' : authError;
 
   useEffect(() => {
@@ -140,7 +144,7 @@ export default function Login() {
 
           {!membersLoading && !membersError ? (
             <div className="mt-4 grid grid-cols-2 gap-3">
-              {members.map((member) => {
+              {activeMembers.map((member) => {
                 const isSelected = visibleSelectedMemberId === member.id;
 
                 return (
@@ -190,10 +194,10 @@ export default function Login() {
               inputMode="numeric"
               autoComplete="current-password"
               maxLength={4}
-              placeholder={selectedMember ? '請輸入 4 位 PIN' : '請先選擇成員'}
+              placeholder={selectedMemberIsActive ? '請輸入 4 位 PIN' : '請先選擇成員'}
               value={pin}
               onChange={handlePinChange}
-              disabled={!selectedMember || isInteractionLocked}
+              disabled={!selectedMemberIsActive || isInteractionLocked}
               aria-label="PIN 碼"
               className="mt-2 w-full rounded-2xl border border-rose-200 bg-white px-4 py-3 text-center text-2xl tracking-[0.6em] text-slate-700 outline-none transition placeholder:tracking-normal placeholder:text-sm placeholder:text-slate-400 focus:border-rose-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
             />

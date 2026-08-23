@@ -113,6 +113,29 @@ The Emulator command requires Java 21+. Java 8 is an acknowledged local blocker;
 - [x] Recommend Firebase Hosting Action or Google Auth, not `firebase login:ci`.
 - [x] Do not deploy in this task.
 
+## Task 7: Member offboarding access revocation
+
+- [x] List all existing `groups/main/members` documents before any mutation and validate configured `authUid` mappings.
+- [x] Write `active: true` for every configured member and update existing Auth users with `disabled: false` plus current credentials.
+- [x] Merge `active: false` into omitted member documents without deleting member data, reports, or tokens.
+- [x] Disable each omitted member's existing Auth UID after a transaction-time identity recheck.
+- [x] Protect every currently configured Auth UID from disable operations, including legacy duplicate references.
+- [x] Require active reporter, active target, and active resolving target actor in Firestore Rules.
+- [x] Keep `useGroup` history resolution intact while hiding inactive members on Login.
+- [x] Add local inactive-member assertions to the token service; Rules remain authoritative.
+- [x] Add seed, reactivation, configured-UID safety, static Rules, Emulator Rules, Login, and token-service tests.
+
+Validation:
+
+```bash
+npm test
+npm --prefix frontend test
+npm --prefix frontend run build
+npm run test:rules:emulator
+```
+
+The Emulator attempt remains expected to block locally on Java 8 until Java 21+ is installed.
+
 Final validation:
 
 ```bash

@@ -15,6 +15,11 @@ test('rules keep public reads and deny group, member, and memberAuth writes', ()
 
 test('rules encode authenticated token transitions and atomic report creation', () => {
   assert.match(rules, /request\.auth\.uid/);
+  assert.match(rules, /function memberIsActive\(groupId, memberId\)/);
+  assert.match(rules, /get\(memberPath\(groupId, memberId\)\)\.data\.active == true/);
+  assert.match(rules, /memberIsActive\(groupId, request\.resource\.data\.targetId\)/);
+  assert.match(rules, /memberIsActive\(groupId, resource\.data\.reporterId\)/);
+  assert.match(rules, /memberIsActive\(groupId, resource\.data\.targetId\)/);
   assert.match(rules, /data\.keys\(\)\.hasOnly/);
   assert.match(rules, /request\.resource\.data\.createdAt == request\.time/);
   assert.match(rules, /resource\.data\.status == 'pending'/);
