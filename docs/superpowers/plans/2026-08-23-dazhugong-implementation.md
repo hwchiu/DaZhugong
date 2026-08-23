@@ -107,7 +107,11 @@ DaZhugong/
 }
 ```
 
-- [ ] **Step 2: 建立 deny-by-default Firestore 規則**
+- [ ] **Step 2: 在 Firebase Console 建立 Firestore（production mode / asia-east1）**
+
+前往 Firebase Console，建立 Firestore Database，選擇 **production mode**，並將地區設定為 `asia-east1`。
+
+- [ ] **Step 3: 建立 deny-by-default Firestore 規則**
 
 ```text
 rules_version = '2';
@@ -142,7 +146,7 @@ service cloud.firestore {
 
 `memberAuth` 必須有明確 deny 規則；Admin SDK 仍可從 Functions/seed 存取。所有客戶端寫入都拒絕。
 
-- [ ] **Step 3: 建立 `.gitignore`**
+- [ ] **Step 4: 建立 `.gitignore`**
 
 ```text
 node_modules/
@@ -155,7 +159,7 @@ scripts/serviceAccountKey.json
 .DS_Store
 ```
 
-- [ ] **Step 4: 驗證規則可由 Emulator 載入**
+- [ ] **Step 5: 驗證規則可由 Emulator 載入**
 
 ```bash
 npx firebase-tools emulators:exec --only firestore --project demo-dazhugong "echo PASS"
@@ -163,7 +167,7 @@ npx firebase-tools emulators:exec --only firestore --project demo-dazhugong "ech
 
 Expected: Firestore Emulator 啟動時無 rules parse error，命令輸出 `PASS`。`memberAuth` 的明確 deny 規則不得在後續 Task 被放寬。
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add firebase.json .firebaserc firestore.rules .gitignore
