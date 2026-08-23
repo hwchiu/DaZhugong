@@ -18,7 +18,7 @@ App 記錄所有 Token，作為未來聚餐基金的參考依據。
 ```
 前端：React (Vite) + Three.js + Tailwind CSS
 資料庫：Cloud Firestore（即時同步）
-身分驗證：Firebase Authentication custom token（PIN UX）+ Firebase App Check
+身分驗證：Firebase Authentication custom token（PIN UX）+ server-derived member identity
 後端邏輯：Firebase Cloud Functions (Node.js 22，authenticated callable)
 部署：Firebase Hosting
 CI/CD：GitHub Actions → firebase deploy
@@ -56,12 +56,12 @@ CI/CD：GitHub Actions → firebase deploy
 Seed 流程必須從未提交的 `scripts/members.local.json` 載入 member 顯示資料、穩定 `authUid` 與每位 member 各自唯一的 4 位 PIN；範本檔為 `scripts/members.example.json`，只能包含安全的示例 `authUid` 值與 `<SET_UNIQUE_PIN>` 佔位，並引導開發者先複製成 local 檔再填入私有 PIN。seed 時只把 PIN 驗證、雜湊並寫入 server-only 的 `memberAuth`，不得在任何 log、UI、文件或 acceptance step 中顯示或暗示共用預設 PIN。
 
 所有具權限的 callable（包含 `reportToken`、`confirmToken`）都必須：
-- 設定 `enforceAppCheck: true`。
+- Cloud Functions v2 options 先只設定 `region: 'asia-east1'`；Firebase App Check / reCAPTCHA Enterprise 延後到未來 hardening。
 - 要求 `request.auth`，缺少時回傳 `unauthenticated`。
 - 只從 `request.auth.uid` 查詢 `members.authUid` 取得 actor member；不得接受或信任 `reporterId`、`memberId` 等 caller identity 欄位。
 - 僅把業務輸入（例如 `targetId`、`tokenId`、`action`）放在 `request.data`。
 
-前端啟動時必須初始化 Firebase App Check（reCAPTCHA Enterprise，開發環境使用明確設定的 debug token），使 callable request 自動攜帶 App Check token。正式部署前須在 Firebase Console 註冊 Web App、設定 site key 並啟用 Functions App Check enforcement。
+前端啟動時必須先驗證必要 Firebase Web config 是否齊全；若缺少設定，畫面只能顯示安全的 setup error，不能直接渲染正常 App。v1 不使用 Firebase App Check，後續 hardening 才再評估加入。
 
 **Phase 2（未來 Google 登入）：**
 - Phase 1 seed 已為每位 member 建立不變的 `authUid`，Firebase Auth UID 與 Firestore member ID 的映射不需重建。
@@ -149,7 +149,7 @@ Seed 流程必須從未提交的 `scripts/members.local.json` 載入 member 顯�
 | Secret 名稱 | 說明 | 取得方式 |
 |-------------|------|----------|
 | `FIREBASE_TOKEN` | Firebase CLI 部署金鑰 | 執行 `firebase login:ci` 取得 |
-| `FIREBASE_CONFIG` | Web config JSON，包含 `apiKey`、`authDomain`、`projectId`、`storageBucket`、`messagingSenderId`、`appId`、`appCheckSiteKey` | Firebase Console → 專案設定 / App Check |
+| `FIREBASE_CONFIG` | Web config JSON，包含 `apiKey`、`authDomain`、`projectId`、`storageBucket`、`messagingSenderId`、`appId` | Firebase Console → 專案設定 |
 
 ### GitHub Actions Workflow 概覽
 
@@ -182,7 +182,7 @@ firebase login:ci
 1. **Phase 1：基礎建設**
    - Firebase 專案初始化、Firestore 規則與 `memberAuth` deny-all 設定
    - Seed 穩定 `authUid`、Firebase Auth user、每位 member 的私有 PIN hash 與節流狀態（來源：`scripts/members.local.json`）
-   - React 專案建立（Vite）、Firebase Auth/App Check 初始化
+   - React 專案建立（Vite）、Firebase Auth 初始化與 Firebase config 啟動檢查
    - Cloud Functions scaffold、驗證/授權與 transaction 測試
    - 前後端 packages 都存在且測試可執行後，再加入 GitHub Actions CI/CD
 

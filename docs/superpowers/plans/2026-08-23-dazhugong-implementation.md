@@ -4,9 +4,9 @@
 
 **Goal:** 建立一個手機優先的 Web App，讓朋友在午餐時可以互相舉報講公事，被確認後投入 Token 到 3D 豬公撲滿，累積聚餐基金。
 
-**Architecture:** React (Vite) 前端以 Firebase Auth custom token 維持 PIN UX，Firebase App Check 保護 callable；Cloud Functions 一律從 `request.auth.uid` 映射 actor，Firestore transaction 保證確認與 Token 計數只發生一次。Firestore 即時同步資料，Three.js 渲染互動式 3D 豬公，Firebase Hosting 部署。
+**Architecture:** React (Vite) 前端以 Firebase Auth custom token 維持 PIN UX，啟動時先驗證必要 Firebase Web config，缺少設定時只顯示安全的 setup error；Cloud Functions 一律從 `request.auth.uid` 映射 actor，並以 Firestore transaction 保證確認與 Token 計數只發生一次。v1 先不使用 Firebase App Check，留待未來 hardening。Firestore 即時同步資料，Three.js 渲染互動式 3D 豬公，Firebase Hosting 部署。
 
-**Tech Stack:** React 18, Vite, Tailwind CSS, Three.js, Cannon-es, Firebase (Auth + App Check + Hosting + Firestore + Functions + Emulator Suite), bcryptjs, GitHub Actions, Recharts
+**Tech Stack:** React 18, Vite, Tailwind CSS, Three.js, Cannon-es, Firebase (Auth + Hosting + Firestore + Functions + Emulator Suite), bcryptjs, GitHub Actions, Recharts
 
 ---
 
@@ -312,7 +312,7 @@ git commit -m "chore: seed stable firebase auth member identities"
 
 ---
 
-## Task 3：React scaffold + Firebase Auth/App Check
+## Task 3：React scaffold + Firebase Auth startup gate
 
 **Files:**
 - Create: `frontend/`
@@ -386,33 +386,30 @@ body {
 ```js
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
 import { getFirestore } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 
-const firebaseConfig = {
+const requiredFields = [
+  'VITE_FIREBASE_API_KEY',
+  'VITE_FIREBASE_AUTH_DOMAIN',
+  'VITE_FIREBASE_PROJECT_ID',
+  'VITE_FIREBASE_STORAGE_BUCKET',
+  'VITE_FIREBASE_MESSAGING_SENDER_ID',
+  'VITE_FIREBASE_APP_ID',
+];
+
+const missing = requiredFields.filter((key) => !String(import.meta.env[key] ?? '').trim());
+if (missing.length > 0) {
+  throw new Error(`Missing required Firebase environment variables: ${missing.join(', ')}`);
+}
+
+const app = initializeApp({
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
-};
-
-const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY;
-if (!appCheckSiteKey) throw new Error('Missing VITE_FIREBASE_APPCHECK_SITE_KEY');
-
-if (import.meta.env.DEV && import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN) {
-  self.FIREBASE_APPCHECK_DEBUG_TOKEN =
-    import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN === 'true'
-      ? true
-      : import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN;
-}
-
-const app = initializeApp(firebaseConfig);
-initializeAppCheck(app, {
-  provider: new ReCaptchaEnterpriseProvider(appCheckSiteKey),
-  isTokenAutoRefreshEnabled: true,
 });
 
 export const auth = getAuth(app);
@@ -426,23 +423,20 @@ export const functions = getFunctions(app, 'asia-east1');
 
 ```text
 VITE_FIREBASE_API_KEY=<web-api-key>
-VITE_FIREBASE_AUTH_DOMAIN=dazhugong-4f185.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=dazhugong-4f185
-VITE_FIREBASE_STORAGE_BUCKET=dazhugong-4f185.firebasestorage.app
-VITE_FIREBASE_MESSAGING_SENDER_ID=488383910775
+VITE_FIREBASE_AUTH_DOMAIN=<your-project>.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=<your-project>
+VITE_FIREBASE_STORAGE_BUCKET=<your-project>.firebasestorage.app
+VITE_FIREBASE_MESSAGING_SENDER_ID=<messaging-sender-id>
 VITE_FIREBASE_APP_ID=<web-app-id>
-VITE_FIREBASE_APPCHECK_SITE_KEY=<recaptcha-enterprise-site-key>
-VITE_FIREBASE_APPCHECK_DEBUG_TOKEN=true
 ```
 
-正式環境不得設定 debug token。
+本機 `.env.local` 只保存 Firebase Web 公開設定，並由 `.gitignore` 排除。
 
 - [ ] **Step 5: 完成 Firebase Console 部署前置**
 
 1. Authentication → 啟用 Firebase Authentication。
-2. App Check → 註冊 Web App → 選 reCAPTCHA Enterprise。
-3. 把 site key 放入本機/CI 的 `VITE_FIREBASE_APPCHECK_SITE_KEY`。
-4. Functions 部署並確認 App Check metrics 後，啟用 enforcement；所有本計畫 callable 本身也設定 `enforceAppCheck: true`。
+2. Project settings → 取得 Web App config，提供本機與 CI 建立 frontend env。
+3. 確認 v1 不設定 App Check / reCAPTCHA Enterprise；未來 hardening 再評估加入，但不得取代 `request.auth` 與 server-derived actor identity。
 
 - [ ] **Step 6: 驗證 frontend build**
 
@@ -454,7 +448,7 @@ Expected: exit 0，且 `frontend/dist/index.html` 存在。
 
 ```bash
 git add frontend/
-git commit -m "feat: initialize react with firebase auth and app check"
+git commit -m "feat: initialize react with firebase auth startup guard"
 ```
 
 ---
@@ -540,7 +534,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const bcrypt = require('bcryptjs');
 
-const OPTIONS = { region: 'asia-east1', enforceAppCheck: true };
+const OPTIONS = { region: 'asia-east1' };
 const MAX_FAILURES = 5;
 const LOCK_MS = 15 * 60 * 1000;
 
@@ -619,7 +613,7 @@ const admin = require('firebase-admin');
 const { requireAuthentication, requireActorMember } = require('./memberIdentity');
 
 exports.reportToken = onCall(
-  { region: 'asia-east1', enforceAppCheck: true },
+  { region: 'asia-east1' },
   async (request) => {
     requireAuthentication(request);
     const data = request.data || {};
@@ -669,7 +663,7 @@ const admin = require('firebase-admin');
 const { requireAuthentication, requireActorMember } = require('./memberIdentity');
 
 exports.confirmToken = onCall(
-  { region: 'asia-east1', enforceAppCheck: true },
+  { region: 'asia-east1' },
   async (request) => {
     requireAuthentication(request);
     const data = request.data || {};
@@ -750,7 +744,7 @@ exports.confirmToken = confirmToken;
 
 - [ ] **Step 7: 先寫 Emulator tests**
 
-`functions/test/callables.test.js` 使用 `node:test`、`firebase-functions-test`、Admin SDK 連 Firestore Emulator，並在每個 test seed `members`、`memberAuth`、`tokens`。以 `fft.wrap()` 呼叫 callable，context 一律帶 `{ app: { appId: 'test-web-app' } }`，authenticated case 再帶 `{ auth: { uid: '<authUid>' } }`。stub `admin.auth().createCustomToken(uid)` 回傳 `test-token:${uid}`。
+`functions/test/callables.test.js` 使用 `node:test`、`firebase-functions-test`、Admin SDK 連 Firestore Emulator，並在每個 test seed `members`、`memberAuth`、`tokens`。以 `fft.wrap()` 呼叫 callable，未登入 case 不帶 `auth`，authenticated case 只帶 `{ auth: { uid: '<authUid>' } }`。stub `admin.auth().createCustomToken(uid)` 回傳 `test-token:${uid}`。
 
 必須實作以下具名測試與 assertion：
 
@@ -1311,8 +1305,7 @@ jobs:
               'VITE_FIREBASE_PROJECT_ID=' + c.projectId,
               'VITE_FIREBASE_STORAGE_BUCKET=' + c.storageBucket,
               'VITE_FIREBASE_MESSAGING_SENDER_ID=' + c.messagingSenderId,
-              'VITE_FIREBASE_APP_ID=' + c.appId,
-              'VITE_FIREBASE_APPCHECK_SITE_KEY=' + c.appCheckSiteKey
+              'VITE_FIREBASE_APP_ID=' + c.appId
             ];
             require('fs').writeFileSync('frontend/.env', lines.join('\n'));
           "
@@ -1333,7 +1326,7 @@ jobs:
 
 - [ ] **Step 2: 設定 Secrets**
 
-`FIREBASE_CONFIG` JSON 必須包含 `appCheckSiteKey`；另設定 `FIREBASE_TOKEN`。此時 `frontend/package-lock.json` 與 `functions/package-lock.json` 已存在，所以 cache、`npm ci`、tests、build 都不得因尚未 scaffold 的 package 失敗。
+`FIREBASE_CONFIG` JSON 只需包含 Firebase Web config 欄位；另設定 `FIREBASE_TOKEN`。此時 `frontend/package-lock.json` 與 `functions/package-lock.json` 已存在，所以 cache、`npm ci`、tests、build 都不得因尚未 scaffold 的 package 失敗。
 
 - [ ] **Step 3: 本機重現 CI**
 
@@ -2188,8 +2181,8 @@ git commit -m "feat: implement settings page with member list and logout"
 
 前往 GitHub Repo → Settings → Secrets and variables → Actions，確認：
 ```
-✅ FIREBASE_TOKEN（重新產生的，非洩漏的那個）
-✅ FIREBASE_CONFIG（JSON 格式，包含 appCheckSiteKey）
+✅ FIREBASE_TOKEN
+✅ FIREBASE_CONFIG（JSON 格式，包含 Firebase Web config 欄位）
 ```
 
 - [ ] **Step 2: 部署前執行 auth/concurrency validation**
@@ -2218,12 +2211,13 @@ git push origin main
 
 前往 GitHub → Actions → 最新的 `Deploy to Firebase` workflow → 確認所有 steps 綠色。
 
-- [ ] **Step 5: 啟用並確認 App Check enforcement**
+- [ ] **Step 5: 確認 callable 驗證與部署區域**
 
-Firebase Console → App Check → Functions：
-- Web App 使用 reCAPTCHA Enterprise site key。
-- `loginWithPin`、`reportToken`、`confirmToken` metrics 有合法請求。
-- Functions enforcement 為 **Enforced**；未帶 App Check token 的 callable 預期被拒。
+Firebase Console / Emulator 驗證：
+- `loginWithPin`、`reportToken`、`confirmToken` 均部署在 `asia-east1`。
+- 未登入呼叫 callable 會被 `request.auth` 檢查拒絕。
+- actor identity 一律由 `request.auth.uid` 映射，前端不得提交 `reporterId` 或其他 caller identity 欄位。
+- Firebase App Check / reCAPTCHA Enterprise 仍列為未來 hardening，不屬於 v1 驗收。
 
 - [ ] **Step 6: 開啟正式網址**
 

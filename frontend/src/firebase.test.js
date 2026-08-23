@@ -23,18 +23,6 @@ const firebaseFunctionsMock = vi.hoisted(() => ({
   getFunctions: vi.fn((app, region) => ({ service: 'functions', app, region })),
 }));
 
-const firebaseAppCheckMock = vi.hoisted(() => ({
-  initializeAppCheck: vi.fn((app, options) => ({
-    service: 'app-check',
-    app,
-    options,
-    debugTokenAtInit: globalThis.FIREBASE_APPCHECK_DEBUG_TOKEN,
-  })),
-  ReCaptchaEnterpriseProvider: vi.fn(function MockReCaptchaEnterpriseProvider(siteKey) {
-    this.siteKey = siteKey;
-  }),
-}));
-
 vi.mock('firebase/app', () => ({
   initializeApp: firebaseAppMock.initializeApp,
   getApps: firebaseAppMock.getApps,
@@ -51,11 +39,6 @@ vi.mock('firebase/firestore', () => ({
 
 vi.mock('firebase/functions', () => ({
   getFunctions: firebaseFunctionsMock.getFunctions,
-}));
-
-vi.mock('firebase/app-check', () => ({
-  initializeAppCheck: firebaseAppCheckMock.initializeAppCheck,
-  ReCaptchaEnterpriseProvider: firebaseAppCheckMock.ReCaptchaEnterpriseProvider,
 }));
 
 function makeFirebaseEnv(overrides = {}) {
@@ -91,9 +74,6 @@ beforeEach(() => {
   firebaseAuthMock.getAuth.mockClear();
   firebaseFirestoreMock.getFirestore.mockClear();
   firebaseFunctionsMock.getFunctions.mockClear();
-  firebaseAppCheckMock.initializeAppCheck.mockClear();
-  firebaseAppCheckMock.ReCaptchaEnterpriseProvider.mockClear();
-  delete globalThis.FIREBASE_APPCHECK_DEBUG_TOKEN;
 });
 
 describe('firebase configuration helpers', () => {
@@ -114,86 +94,22 @@ describe('firebase configuration helpers', () => {
     expect(firebaseAppMock.initializeApp).not.toHaveBeenCalled();
   });
 
-  it('fails clearly in production when the App Check site key is absent', async () => {
-    const { initializeFirebase } = await loadFirebaseModule();
-
-    await expect(
-      initializeFirebase(
-        makeFirebaseEnv({ MODE: 'production', VITE_FIREBASE_APPCHECK_SITE_KEY: '' }),
-        makeBrowserRuntime(),
-      ),
-    ).rejects.toThrow(/VITE_FIREBASE_APPCHECK_SITE_KEY/);
-    expect(firebaseAppCheckMock.initializeAppCheck).not.toHaveBeenCalled();
-  });
-
-  it('fails in development when the App Check site key is absent', async () => {
-    const { initializeFirebase } = await loadFirebaseModule();
-
-    await expect(initializeFirebase(makeFirebaseEnv(), makeBrowserRuntime())).rejects.toThrow(
-      /VITE_FIREBASE_APPCHECK_SITE_KEY/,
-    );
-    expect(firebaseAppCheckMock.initializeAppCheck).not.toHaveBeenCalled();
-  });
-
-  it('fails in development when the App Check debug token is absent', async () => {
-    const { initializeFirebase } = await loadFirebaseModule();
-
-    await expect(
-      initializeFirebase(
-        makeFirebaseEnv({
-          VITE_FIREBASE_APPCHECK_SITE_KEY: 'site-key',
-          VITE_FIREBASE_APPCHECK_DEBUG_TOKEN: '   ',
-        }),
-        makeBrowserRuntime(),
-      ),
-    ).rejects.toThrow(/VITE_FIREBASE_APPCHECK_DEBUG_TOKEN/);
-    expect(firebaseAppCheckMock.initializeAppCheck).not.toHaveBeenCalled();
-  });
-
-  it('normalizes App Check debug tokens', async () => {
-    const { normalizeAppCheckDebugToken } = await loadFirebaseModule();
-
-    expect(normalizeAppCheckDebugToken()).toBeUndefined();
-    expect(normalizeAppCheckDebugToken('   ')).toBeUndefined();
-    expect(normalizeAppCheckDebugToken(' true ')).toBe(true);
-    expect(normalizeAppCheckDebugToken(' debug-token ')).toBe('debug-token');
-  });
-
-  it('initializes Firebase and updates exported services when development config is complete', async () => {
+  it('initializes Firebase and updates exported services when required config is present', async () => {
     const firebaseModule = await loadFirebaseModule();
 
-    const services = await firebaseModule.initializeFirebase(
-      makeFirebaseEnv({
-        VITE_FIREBASE_APPCHECK_SITE_KEY: 'site-key',
-        VITE_FIREBASE_APPCHECK_DEBUG_TOKEN: ' true ',
-      }),
-      makeBrowserRuntime(),
-    );
+    const services = await firebaseModule.initializeFirebase(makeFirebaseEnv(), makeBrowserRuntime());
 
-    expect(globalThis.FIREBASE_APPCHECK_DEBUG_TOKEN).toBe(true);
-    expect(services.appCheck?.debugTokenAtInit).toBe(true);
-    expect(firebaseAppCheckMock.ReCaptchaEnterpriseProvider).toHaveBeenCalledWith('site-key');
-    expect(firebaseAppCheckMock.initializeAppCheck).toHaveBeenCalledTimes(1);
+    expect(services).toEqual({
+      app: services.app,
+      auth: services.auth,
+      db: services.db,
+      functions: services.functions,
+    });
+    expect(services).not.toHaveProperty('appCheck');
     expect(firebaseModule.firebaseApp).toBe(services.app);
     expect(firebaseModule.auth).toBe(services.auth);
     expect(firebaseModule.db).toBe(services.db);
     expect(firebaseModule.functions).toBe(services.functions);
-    expect(firebaseModule.appCheck).toBe(services.appCheck);
-  });
-
-  it('never enables the App Check debug token in production', async () => {
-    const { initializeFirebase } = await loadFirebaseModule();
-
-    const services = await initializeFirebase(
-      makeFirebaseEnv({
-        MODE: 'production',
-        VITE_FIREBASE_APPCHECK_SITE_KEY: 'site-key',
-        VITE_FIREBASE_APPCHECK_DEBUG_TOKEN: 'true',
-      }),
-      makeBrowserRuntime(),
-    );
-
-    expect(globalThis.FIREBASE_APPCHECK_DEBUG_TOKEN).toBeUndefined();
-    expect(services.appCheck?.debugTokenAtInit).toBeUndefined();
+    expect(firebaseFunctionsMock.getFunctions).toHaveBeenCalledWith(services.app, 'asia-east1');
   });
 });

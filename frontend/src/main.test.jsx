@@ -26,7 +26,7 @@ describe('startApplication', () => {
     });
 
     expect(document.body.textContent).toContain('Configuration error');
-    expect(document.body.textContent).toContain('Firebase and App Check settings');
+    expect(document.body.textContent).toContain('required Firebase settings');
     expect(document.body.textContent).not.toContain('大豬公');
     expect(logger).toHaveBeenCalledWith(
       'Firebase initialization failed:',

@@ -12,7 +12,7 @@ function StartupConfigurationError() {
         <p className="text-sm font-medium uppercase tracking-[0.3em] text-rose-400">Configuration error</p>
         <h1 className="mt-4 text-3xl font-bold text-rose-500">Unable to start the app</h1>
         <p className="mt-3 text-sm leading-6 text-slate-500">
-          Check the required Firebase and App Check settings, then reload the page.
+          Check the required Firebase settings, then reload the page.
         </p>
       </section>
     </main>
