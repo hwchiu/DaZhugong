@@ -1,9 +1,11 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { initializeFirebase } from './firebase.js';
+import { startAuthObserver } from './store/authStore.js';
 import './index.css';
+
+const ROOT_INSTANCE_KEY = '__dazhugongReactRoot';
 
 function StartupConfigurationError() {
   return (
@@ -26,24 +28,76 @@ export function getSafeFirebaseStartupMessage(error) {
   return safeMessage ? `${safeMessage.replace(/\.+$/, '')}.` : 'Firebase initialization failed.';
 }
 
+let currentApplicationCleanup = null;
+
+function getOrCreateRoot(rootElement, createRootImpl) {
+  if (!rootElement[ROOT_INSTANCE_KEY]) {
+    rootElement[ROOT_INSTANCE_KEY] = createRootImpl(rootElement);
+  }
+
+  return rootElement[ROOT_INSTANCE_KEY];
+}
+
+function registerApplicationCleanup({ stopAuthObserver, addWindowListener, removeWindowListener, hot }) {
+  let cleanedUp = false;
+
+  const handleWindowExit = () => {
+    cleanup();
+  };
+
+  const cleanup = () => {
+    if (cleanedUp) {
+      return;
+    }
+
+    cleanedUp = true;
+    removeWindowListener?.('beforeunload', handleWindowExit);
+
+    if (typeof stopAuthObserver === 'function') {
+      stopAuthObserver();
+    }
+  };
+
+  addWindowListener?.('beforeunload', handleWindowExit);
+  hot?.dispose?.(cleanup);
+
+  return cleanup;
+}
+
 export async function startApplication({
   initializeFirebaseImpl = initializeFirebase,
+  startAuthObserverImpl = startAuthObserver,
   rootElement = document.getElementById('root'),
   createRootImpl = (element) => ReactDOM.createRoot(element),
+  addWindowListener = globalThis.window?.addEventListener?.bind(globalThis.window),
+  removeWindowListener = globalThis.window?.removeEventListener?.bind(globalThis.window),
+  hot = import.meta.hot,
   logger = console.error,
 } = {}) {
+  currentApplicationCleanup?.();
+  currentApplicationCleanup = null;
+
   try {
     await initializeFirebaseImpl();
-    createRootImpl(rootElement).render(
+    const stopAuthObserver = startAuthObserverImpl();
+    const cleanup = registerApplicationCleanup({
+      stopAuthObserver,
+      addWindowListener,
+      removeWindowListener,
+      hot,
+    });
+
+    currentApplicationCleanup = cleanup;
+    getOrCreateRoot(rootElement, createRootImpl).render(
       <React.StrictMode>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
+        <App />
       </React.StrictMode>,
     );
+
+    return cleanup;
   } catch (error) {
     logger('Firebase initialization failed:', getSafeFirebaseStartupMessage(error));
-    createRootImpl(rootElement).render(
+    getOrCreateRoot(rootElement, createRootImpl).render(
       <React.StrictMode>
         <StartupConfigurationError />
       </React.StrictMode>,

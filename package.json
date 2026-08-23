@@ -3,7 +3,7 @@
   "type": "commonjs",
   "scripts": {
     "seed": "node scripts/seed.js",
-    "test": "node --test"
+    "test": "node --test scripts/*.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
