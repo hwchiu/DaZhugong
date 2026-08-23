@@ -872,22 +872,41 @@ import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export function useGroup(groupId) {
-  const [group, setGroup] = useState(null);
-  const [members, setMembers] = useState([]);
+  const [state, setState] = useState({
+    group: null,
+    members: [],
+    loading: false,
+    error: null,
+  });
 
   useEffect(() => {
+    setState({
+      group: null,
+      members: [],
+      loading: true,
+      error: null,
+    });
+
     const unsub1 = onSnapshot(doc(db, 'groups', groupId), (snap) => {
-      setGroup({ id: snap.id, ...snap.data() });
+      setState((current) => ({
+        ...current,
+        group: { id: snap.id, ...snap.data() },
+        loading: false,
+      }));
     });
 
     const unsub2 = onSnapshot(collection(db, 'groups', groupId, 'members'), (snap) => {
-      setMembers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setState((current) => ({
+        ...current,
+        members: snap.docs.map((d) => ({ id: d.id, ...d.data() })),
+        loading: false,
+      }));
     });
 
     return () => { unsub1(); unsub2(); };
   }, [groupId]);
 
-  return { group, members };
+  return state;
 }
 ```
 
@@ -899,22 +918,35 @@ import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 
 export function usePending(groupId, memberId) {
-  const [pending, setPending] = useState([]);
+  const [state, setState] = useState({
+    pending: [],
+    loading: false,
+    error: null,
+  });
 
   useEffect(() => {
-    if (!memberId) return;
+    if (!memberId) {
+      setState({ pending: [], loading: false, error: null });
+      return;
+    }
+
+    setState({ pending: [], loading: true, error: null });
     const q = query(
       collection(db, 'groups', groupId, 'tokens'),
       where('targetId', '==', memberId),
       where('status', '==', 'pending')
     );
     const unsub = onSnapshot(q, (snap) => {
-      setPending(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setState({
+        pending: snap.docs.map((d) => ({ id: d.id, ...d.data() })),
+        loading: false,
+        error: null,
+      });
     });
     return unsub;
   }, [groupId, memberId]);
 
-  return pending;
+  return state;
 }
 ```
 
@@ -926,21 +958,30 @@ import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestor
 import { db } from '../firebase';
 
 export function useTokens(groupId, count = 30) {
-  const [tokens, setTokens] = useState([]);
+  const [state, setState] = useState({
+    tokens: [],
+    loading: false,
+    error: null,
+  });
 
   useEffect(() => {
+    setState({ tokens: [], loading: true, error: null });
     const q = query(
       collection(db, 'groups', groupId, 'reports'),
       orderBy('timestamp', 'desc'),
       limit(count)
     );
     const unsub = onSnapshot(q, (snap) => {
-      setTokens(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      setState({
+        tokens: snap.docs.map((d) => ({ id: d.id, ...d.data() })),
+        loading: false,
+        error: null,
+      });
     });
     return unsub;
   }, [groupId, count]);
 
-  return tokens;
+  return state;
 }
 ```
 
@@ -970,7 +1011,7 @@ import { auth, functions } from '../firebase';
 const AVATARS = { pig: '🐷', cat: '🐱', frog: '🐸', bear: '🐻', dog: '🐶' };
 
 export default function Login() {
-  const { members } = useGroup('main');
+  const { members, loading: membersLoading, error: membersError } = useGroup('main');
   const [selected, setSelected] = useState(null);
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
@@ -1361,7 +1402,7 @@ import { useAuthStore } from '../store/authStore';
 import MemberAvatar from '../components/MemberAvatar';
 
 export default function Vote() {
-  const { members } = useGroup('main');
+  const { members, loading: membersLoading, error: membersError } = useGroup('main');
   const currentMember = useAuthStore((s) => s.currentMember);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -1468,7 +1509,7 @@ import { useAuthStore } from '../store/authStore';
 export default function PendingBanner() {
   const navigate = useNavigate();
   const currentMember = useAuthStore((s) => s.currentMember);
-  const pending = usePending('main', currentMember?.id);
+  const { pending, loading: pendingLoading, error: pendingError } = usePending('main', currentMember?.id);
 
   if (pending.length === 0) return null;
 
@@ -1501,8 +1542,8 @@ const AVATARS = { pig: '🐷', cat: '🐱', frog: '🐸', bear: '🐻', dog: '�
 
 export default function Pending() {
   const currentMember = useAuthStore((s) => s.currentMember);
-  const pending = usePending('main', currentMember?.id);
-  const { members } = useGroup('main');
+  const { pending, loading: pendingLoading, error: pendingError } = usePending('main', currentMember?.id);
+  const { members, loading: membersLoading, error: membersError } = useGroup('main');
   const memberMap = Object.fromEntries(members.map((m) => [m.id, m]));
 
   async function handleAction(tokenId, action) {
@@ -1609,7 +1650,7 @@ const AVATARS = { pig: '🐷', cat: '🐱', frog: '🐸', bear: '🐻', dog: '�
 
 export default function Home() {
   const navigate = useNavigate();
-  const { group, members } = useGroup('main');
+  const { group, members, loading: groupLoading, error: groupError } = useGroup('main');
   const currentMember = useAuthStore((s) => s.currentMember);
   const total = members.reduce((s, m) => s + (m.totalTokens || 0), 0);
 
@@ -1958,8 +1999,8 @@ import { useGroup } from '../hooks/useGroup';
 const AVATARS = { pig: '🐷', cat: '🐱', frog: '🐸', bear: '🐻', dog: '🐶' };
 
 export default function History() {
-  const tokens = useTokens('main', 50);
-  const { members } = useGroup('main');
+  const { tokens, loading: tokensLoading, error: tokensError } = useTokens('main', 50);
+  const { members, loading: membersLoading, error: membersError } = useGroup('main');
   const memberMap = Object.fromEntries(members.map((m) => [m.id, m]));
 
   return (
@@ -2015,7 +2056,7 @@ import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recha
 import { useGroup } from '../hooks/useGroup';
 
 export default function Stats() {
-  const { members } = useGroup('main');
+  const { members, loading: membersLoading, error: membersError } = useGroup('main');
   const total = members.reduce((s, m) => s + (m.totalTokens || 0), 0);
   const sorted = [...members].sort((a, b) => b.totalTokens - a.totalTokens);
   const chartData = sorted
@@ -2097,7 +2138,7 @@ import { useAuthStore } from '../store/authStore';
 const AVATARS = { pig: '🐷', cat: '🐱', frog: '🐸', bear: '🐻', dog: '🐶' };
 
 export default function Settings() {
-  const { group, members } = useGroup('main');
+  const { group, members, loading: groupLoading, error: groupError } = useGroup('main');
   const { currentMember, logout } = useAuthStore();
   const total = members.reduce((s, m) => s + (m.totalTokens || 0), 0);
 
