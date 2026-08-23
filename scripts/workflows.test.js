@@ -17,6 +17,8 @@ test('deploy workflow validates, builds, and deploys only Spark resources', () =
 
   assert.match(workflow, /push:\s*\n\s+branches: \[main\]/);
   assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /deploy:\s*\n\s+if: github\.ref == 'refs\/heads\/main'/);
+  assert.match(workflow, /deploy:\s*\n\s+if: github\.ref == 'refs\/heads\/main'\s*\n\s+environment: production/);
   assert.match(workflow, /contents: read/);
   assert.match(workflow, /id-token: write/);
   assert.match(workflow, /cancel-in-progress: true/);
@@ -44,6 +46,8 @@ test('seed workflow is manual, service-account-only, and always cleans private f
 
   assert.doesNotMatch(workflow, /\bpush:/);
   assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /seed:\s*\n\s+if: github\.ref == 'refs\/heads\/main'/);
+  assert.match(workflow, /seed:\s*\n\s+if: github\.ref == 'refs\/heads\/main'\s*\n\s+environment: production/);
   assert.match(workflow, /node-version: 22\.12\.0/);
   assert.match(workflow, /FIREBASE_SERVICE_ACCOUNT_DAZHUGONG_4F185/);
   assert.match(workflow, /MEMBERS_CONFIG/);
@@ -58,4 +62,12 @@ test('seed workflow is manual, service-account-only, and always cleans private f
     /rm -f scripts\/members\.local\.json scripts\/serviceAccountKey\.json/,
   );
   assert.doesNotMatch(workflow, /FIREBASE_TOKEN/);
+});
+
+test('README documents the production environment guardrails', () => {
+  const readme = fs.readFileSync(path.join(repositoryRoot, 'README.md'), 'utf8');
+
+  assert.match(readme, /GitHub Environment: `production`/);
+  assert.match(readme, /Restrict deployment branches to `main`/);
+  assert.match(readme, /required reviewers/);
 });

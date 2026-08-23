@@ -20,6 +20,13 @@ DaZhugong is a Firebase Spark application deployed to:
 
 Use a dedicated, least-privilege account. Do not use a personal account key.
 
+## GitHub Environment: `production`
+
+Create a protected GitHub Environment named `production` and assign the
+deploying workflows to it. Restrict deployment branches to `main`, and add
+required reviewers if you want an extra approval gate before credentials are
+exposed to the job.
+
 ## Required GitHub Actions secrets
 
 Configure these under **Settings → Secrets and variables → Actions**:
