@@ -1,0 +1,204 @@
+import { useState } from 'react';
+import { signInWithCustomToken } from 'firebase/auth';
+import { httpsCallable } from 'firebase/functions';
+import { useGroup } from '../hooks/useGroup.js';
+import { auth, functions } from '../firebase.js';
+
+const GROUP_ID = 'main';
+const THROTTLED_ERROR_MESSAGE = '嘗試次數過多，請稍後再試。';
+const GENERIC_ERROR_MESSAGE = '登入失敗，請確認 PIN 後再試，或稍後重試。';
+const MEMBERS_ERROR_MESSAGE = '成員資料暫時載入失敗，請重新整理頁面後再試。';
+const MEMBER_EMOJIS = {
+  pig: '🐷',
+  cat: '🐱',
+  frog: '🐸',
+  bear: '🐻',
+  dog: '🐶',
+};
+
+function getMemberEmoji(avatar) {
+  return MEMBER_EMOJIS[avatar] ?? '🐷';
+}
+
+function getTokenCountLabel(totalTokens) {
+  return `${Number.isFinite(totalTokens) ? totalTokens : 0} 枚代幣`;
+}
+
+function sanitizePin(value) {
+  return value.replace(/\D/g, '').slice(0, 4);
+}
+
+function isValidCustomToken(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function getLoginErrorMessage(error) {
+  return error?.code === 'functions/resource-exhausted' ? THROTTLED_ERROR_MESSAGE : GENERIC_ERROR_MESSAGE;
+}
+
+function getSelectedCardStyle(member) {
+  return {
+    borderColor: member.color || '#f472b6',
+    backgroundColor: `${member.color || '#f472b6'}18`,
+  };
+}
+
+export default function Login() {
+  const { members, loading: membersLoading, error: membersError } = useGroup(GROUP_ID);
+  const [selectedMember, setSelectedMember] = useState(null);
+  const [pin, setPin] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  const canSubmit = Boolean(selectedMember) && pin.length === 4 && !membersLoading && !membersError && !isLoggingIn;
+
+  function handleSelectMember(member) {
+    setSelectedMember(member);
+    setPin('');
+    setErrorMessage('');
+  }
+
+  function handlePinChange(event) {
+    setPin(sanitizePin(event.target.value));
+    setErrorMessage('');
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+
+    if (!canSubmit) {
+      return;
+    }
+
+    setIsLoggingIn(true);
+    setErrorMessage('');
+
+    try {
+      const loginWithPin = httpsCallable(functions, 'loginWithPin');
+      const result = await loginWithPin({
+        groupId: GROUP_ID,
+        memberId: selectedMember.id,
+        pin,
+      });
+      const customToken = result?.data?.customToken;
+
+      if (!isValidCustomToken(customToken)) {
+        throw new Error('Missing custom token.');
+      }
+
+      await signInWithCustomToken(auth, customToken);
+    } catch (error) {
+      setErrorMessage(getLoginErrorMessage(error));
+      setPin('');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  }
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-rose-50 via-pink-50 to-orange-50 px-4 py-8 text-slate-800">
+      <section className="w-full max-w-sm rounded-[2rem] bg-white/95 p-6 shadow-xl shadow-rose-100">
+        <header className="text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-rose-100 text-4xl">
+            🐷
+          </div>
+          <p className="mt-4 text-xs font-semibold uppercase tracking-[0.35em] text-rose-400">DaZhugong</p>
+          <h1 className="mt-2 text-3xl font-bold text-rose-500">大豬公</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">選擇成員並輸入 4 位 PIN，即可進入午餐禁聊公事罰金箱。</p>
+        </header>
+
+        <div className="mt-6 rounded-3xl bg-rose-50/70 p-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-semibold text-slate-700">選擇成員</h2>
+            {membersLoading ? (
+              <p role="status" aria-live="polite" className="text-xs font-medium text-rose-500">
+                載入成員資料中…
+              </p>
+            ) : null}
+          </div>
+
+          {membersError ? (
+            <p role="alert" className="mt-3 rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm text-rose-600">
+              {MEMBERS_ERROR_MESSAGE}
+            </p>
+          ) : null}
+
+          {!membersLoading && !membersError ? (
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              {members.map((member) => {
+                const isSelected = selectedMember?.id === member.id;
+
+                return (
+                  <button
+                    key={member.id}
+                    type="button"
+                    aria-label={`選擇成員 ${member.name}`}
+                    aria-pressed={isSelected}
+                    onClick={() => handleSelectMember(member)}
+                    className={`rounded-2xl border-2 bg-white px-4 py-3 text-left transition ${
+                      isSelected ? 'scale-[1.02] shadow-md shadow-rose-100' : 'border-transparent'
+                    }`}
+                    style={isSelected ? getSelectedCardStyle(member) : undefined}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-3xl leading-none">{getMemberEmoji(member.avatar)}</span>
+                      <span
+                        aria-hidden="true"
+                        className="mt-1 inline-block h-3 w-3 rounded-full border border-white/70 shadow-sm"
+                        style={{ backgroundColor: member.color || '#f472b6' }}
+                      />
+                    </div>
+                    <p className="mt-3 text-sm font-semibold text-slate-700">{member.name}</p>
+                    <p className="mt-1 text-xs text-slate-500">{getTokenCountLabel(member.totalTokens)}</p>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+
+        <form className="mt-5 space-y-4" onSubmit={handleSubmit}>
+          <div>
+            <label htmlFor="login-pin" className="block text-sm font-medium text-slate-700">
+              PIN 碼
+            </label>
+            <input
+              id="login-pin"
+              type="password"
+              inputMode="numeric"
+              autoComplete="current-password"
+              maxLength={4}
+              placeholder={selectedMember ? '請輸入 4 位 PIN' : '請先選擇成員'}
+              value={pin}
+              onChange={handlePinChange}
+              disabled={!selectedMember || membersLoading || Boolean(membersError) || isLoggingIn}
+              aria-label="PIN 碼"
+              className="mt-2 w-full rounded-2xl border border-rose-200 bg-white px-4 py-3 text-center text-2xl tracking-[0.6em] text-slate-700 outline-none transition placeholder:tracking-normal placeholder:text-sm placeholder:text-slate-400 focus:border-rose-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+            />
+          </div>
+
+          {isLoggingIn ? (
+            <p role="status" aria-live="polite" className="text-sm text-rose-500">
+              登入中…
+            </p>
+          ) : null}
+
+          {errorMessage ? (
+            <p role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+              {errorMessage}
+            </p>
+          ) : null}
+
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="w-full rounded-2xl px-4 py-3 text-base font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-slate-300"
+            style={!canSubmit ? undefined : { backgroundColor: selectedMember?.color || '#f43f5e' }}
+          >
+            {isLoggingIn ? '登入中' : '登入'}
+          </button>
+        </form>
+      </section>
+    </main>
+  );
+}
