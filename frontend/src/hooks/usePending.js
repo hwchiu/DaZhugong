@@ -8,6 +8,10 @@ function toSafeError() {
   return new Error(SAFE_ERROR_MESSAGE);
 }
 
+function getRequestKey(groupId, memberId) {
+  return groupId && memberId ? `${groupId}::${memberId}` : null;
+}
+
 function toMillis(timestamp) {
   if (!timestamp) {
     return 0;
@@ -55,6 +59,7 @@ function toPendingDoc(docSnapshot) {
 export function usePending(groupId, memberId) {
   const subscriptionIdRef = useRef(0);
   const [state, setState] = useState({
+    requestKey: null,
     pending: [],
     loading: false,
     error: null,
@@ -63,9 +68,11 @@ export function usePending(groupId, memberId) {
   useEffect(() => {
     const nextSubscriptionId = subscriptionIdRef.current + 1;
     subscriptionIdRef.current = nextSubscriptionId;
+    const nextRequestKey = getRequestKey(groupId, memberId);
 
-    if (!groupId || !memberId) {
+    if (!nextRequestKey) {
       setState({
+        requestKey: null,
         pending: [],
         loading: false,
         error: null,
@@ -89,6 +96,7 @@ export function usePending(groupId, memberId) {
       active = false;
       clearSubscription();
       setState({
+        requestKey: nextRequestKey,
         pending: [],
         loading: false,
         error: error instanceof Error ? new Error(SAFE_ERROR_MESSAGE) : toSafeError(),
@@ -96,6 +104,7 @@ export function usePending(groupId, memberId) {
     };
 
     setState({
+      requestKey: nextRequestKey,
       pending: [],
       loading: true,
       error: null,
@@ -118,6 +127,7 @@ export function usePending(groupId, memberId) {
 
             const pending = (snapshot?.docs ?? []).map(toPendingDoc).slice().sort(comparePending);
             setState({
+              requestKey: nextRequestKey,
               pending,
               loading: false,
               error: null,
@@ -138,7 +148,29 @@ export function usePending(groupId, memberId) {
     };
   }, [groupId, memberId]);
 
-  return state;
+  const requestKey = getRequestKey(groupId, memberId);
+
+  if (!requestKey) {
+    return {
+      pending: [],
+      loading: false,
+      error: null,
+    };
+  }
+
+  if (state.requestKey !== requestKey) {
+    return {
+      pending: [],
+      loading: true,
+      error: null,
+    };
+  }
+
+  return {
+    pending: state.pending,
+    loading: state.loading,
+    error: state.error,
+  };
 }
 
 export default usePending;

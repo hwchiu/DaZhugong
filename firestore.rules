@@ -19,6 +19,10 @@ service cloud.firestore {
         && get(memberPath(groupId, memberId)).data.active == true;
     }
 
+    function memberExists(groupId, memberId) {
+      return exists(memberPath(groupId, memberId));
+    }
+
     function isMember(groupId, memberId) {
       return request.auth != null
         && memberIsActive(groupId, memberId)
@@ -80,7 +84,7 @@ service cloud.firestore {
     function validTokenUpdate(groupId, tokenId) {
       return hasExactTokenFields(request.resource.data)
         && resource.data.status == 'pending'
-        && memberIsActive(groupId, resource.data.reporterId)
+        && memberExists(groupId, resource.data.reporterId)
         && memberIsActive(groupId, resource.data.targetId)
         && isMember(groupId, resource.data.targetId)
         && immutableTokenIdentity()
@@ -116,7 +120,7 @@ service cloud.firestore {
           == get(tokenPath(groupId, tokenId)).data.createdAt
         && request.resource.data.targetId == getAfter(tokenPath(groupId, tokenId)).data.targetId
         && request.resource.data.reporterId == getAfter(tokenPath(groupId, tokenId)).data.reporterId
-        && memberIsActive(groupId, request.resource.data.reporterId)
+        && memberExists(groupId, request.resource.data.reporterId)
         && memberIsActive(groupId, request.resource.data.targetId)
         && isMember(groupId, request.resource.data.targetId);
     }

@@ -1,6 +1,6 @@
-import { act } from 'react';
+import { act, createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { render, renderHook, waitFor } from '@testing-library/react';
 
 const firestoreMock = vi.hoisted(() => {
   const state = {
@@ -150,5 +150,52 @@ describe('usePending', () => {
     expect(result.current.pending).toEqual([
       { id: 'new', targetId: 'member-2', status: 'pending', createdAt: 200 },
     ]);
+  });
+
+  it('clears stale pending data immediately when the member identity changes', async () => {
+    const { usePending } = await loadHook();
+    const renders = [];
+
+    function Probe({ groupId, memberId }) {
+      const state = usePending(groupId, memberId);
+      renders.push({
+        groupId,
+        memberId,
+        pendingIds: state.pending.map((item) => item.id),
+        loading: state.loading,
+      });
+      return null;
+    }
+
+    const { rerender } = render(createElement(Probe, { groupId: 'group-1', memberId: 'member-1' }));
+
+    const firstSubscription = firestoreMock.state.subscriptions[0];
+
+    await act(async () => {
+      firstSubscription.next(
+        makeSnapshot([
+          makeDoc('old', { targetId: 'member-1', status: 'pending', createdAt: 100 }),
+        ]),
+      );
+    });
+
+    await waitFor(() =>
+      expect(renders.some((entry) => entry.memberId === 'member-1' && entry.loading === false && entry.pendingIds[0] === 'old')).toBe(true),
+    );
+
+    const renderCountBeforeSwitch = renders.length;
+    rerender(createElement(Probe, { groupId: 'group-1', memberId: 'member-2' }));
+
+    const switchRenders = renders.slice(renderCountBeforeSwitch);
+
+    expect(switchRenders[0]).toMatchObject({
+      groupId: 'group-1',
+      memberId: 'member-2',
+      pendingIds: [],
+      loading: true,
+    });
+    expect(
+      switchRenders.some((entry) => entry.memberId === 'member-2' && entry.pendingIds.includes('old')),
+    ).toBe(false);
   });
 });

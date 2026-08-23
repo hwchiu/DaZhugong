@@ -177,3 +177,34 @@ test('inactive members cannot create or resolve tokens and active reporters cann
     resolvedAt: null,
   }));
 });
+
+test('target can still confirm a pending token after the reporter becomes inactive', { skip: !shouldRun }, async () => {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'groups/main/members/member1'), { authUid: 'uid-1', active: false });
+    await setDoc(doc(db, 'groups/main/members/member2'), { authUid: 'uid-2', active: true });
+    await setDoc(doc(db, 'groups/main/tokens/token-1'), {
+      targetId: 'member2',
+      reporterId: 'member1',
+      status: 'pending',
+      createdAt: new Date(),
+      confirmedAt: null,
+      resolvedAt: null,
+    });
+  });
+
+  const targetDb = testEnv.authenticatedContext('uid-2').firestore();
+  const batch = writeBatch(targetDb);
+  batch.update(doc(targetDb, 'groups/main/tokens/token-1'), {
+    status: 'confirmed',
+    confirmedAt: serverTimestamp(),
+    resolvedAt: serverTimestamp(),
+  });
+  batch.set(doc(targetDb, 'groups/main/reports/token-1'), {
+    targetId: 'member2',
+    reporterId: 'member1',
+    timestamp: serverTimestamp(),
+  });
+
+  await assertSucceeds(batch.commit());
+});
