@@ -196,7 +196,7 @@ export default function Home() {
               )}
             </div>
             <p className="mt-3 text-center text-xs leading-5 text-slate-300">
-              左右拖曳可旋轉；代表物件會依成員 Token 顏色與數量呈現。
+              左右拖曳可旋轉；小豬內的彩色星形代表物件會依 Token 數量呈現。
             </p>
           </div>
 
