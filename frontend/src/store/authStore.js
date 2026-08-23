@@ -146,6 +146,7 @@ export const useAuthStore = create(() => ({
   currentMember: null,
   groupId: 'main',
   authError: null,
+  logout,
 }));
 
 export default useAuthStore;

@@ -399,4 +399,14 @@ describe('authStore', () => {
     await expect(logout()).rejects.toBe(failure);
     expect(firebaseMock.signOut).toHaveBeenCalledWith(firebaseMock.auth);
   });
+
+  it('exposes logout as a store action', async () => {
+    firebaseMock.signOut.mockResolvedValue(undefined);
+
+    const { useAuthStore } = await loadAuthStore();
+    const { logout } = useAuthStore.getState();
+
+    await expect(logout()).resolves.toBeUndefined();
+    expect(firebaseMock.signOut).toHaveBeenCalledWith(firebaseMock.auth);
+  });
 });
