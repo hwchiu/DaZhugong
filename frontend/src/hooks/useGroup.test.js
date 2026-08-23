@@ -59,7 +59,10 @@ describe('useGroup', () => {
   it('loads a group and sorts members without mutating the snapshot', async () => {
     const { useGroup } = await loadHook();
 
-    const originalDocs = [makeDoc('zeta', { name: 'Zeta' }), makeDoc('alpha', { name: 'Alpha' })];
+    const originalDocs = [
+      makeDoc('zeta', { name: 'Zeta', active: false, totalTokens: 9 }),
+      makeDoc('alpha', { name: 'Alpha', active: true }),
+    ];
     const { result } = renderHook(() => useGroup('group-1'));
 
     expect(result.current).toMatchObject({
@@ -87,8 +90,8 @@ describe('useGroup', () => {
     expect(result.current).toMatchObject({
       group: { id: 'group-1', name: 'Lunch Crew' },
       members: [
-        { id: 'alpha', name: 'Alpha', totalTokens: 2 },
-        { id: 'zeta', name: 'Zeta', totalTokens: 1 },
+        { id: 'alpha', name: 'Alpha', active: true, totalTokens: 2 },
+        { id: 'zeta', name: 'Zeta', active: false, totalTokens: 9 },
       ],
       loading: false,
       error: null,

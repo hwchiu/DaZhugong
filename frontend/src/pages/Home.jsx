@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import MemberAvatar from '../components/MemberAvatar.jsx';
 import PendingBanner from '../components/PendingBanner.jsx';
 import { useGroup } from '../hooks/useGroup.js';
-import { useTokens } from '../hooks/useTokens.js';
 import { useAuthStore } from '../store/authStore.js';
 
 const SAFE_LOAD_ERROR_MESSAGE = '目前無法同步首頁資料，請稍後再試。';
@@ -25,22 +24,6 @@ function getSafeAccentStyle(color) {
 
 function formatTokenCount(count) {
   return `${count} Token`;
-}
-
-function buildConfirmedTotals(tokens) {
-  const totals = new Map();
-  let totalConfirmedTokens = 0;
-
-  for (const token of tokens) {
-    if (typeof token?.targetId !== 'string') {
-      continue;
-    }
-
-    totals.set(token.targetId, (totals.get(token.targetId) ?? 0) + 1);
-    totalConfirmedTokens += 1;
-  }
-
-  return { totals, totalConfirmedTokens };
 }
 
 function compareMembers(left, right, currentMemberId) {
@@ -66,17 +49,16 @@ function compareMembers(left, right, currentMemberId) {
   return 0;
 }
 
-function buildMemberSummary(members, totalsByTargetId, currentMemberId) {
+function buildMemberSummary(members, currentMemberId) {
   return members
     .map((member) => ({
       ...member,
-      confirmedCount: totalsByTargetId.get(member.id) ?? 0,
     }))
     .sort((left, right) => compareMembers(left, right, currentMemberId));
 }
 
 function MemberSummaryCard({ member, emphasize = false }) {
-  const tokenCountLabel = formatTokenCount(member.confirmedCount);
+  const tokenCountLabel = formatTokenCount(member.totalTokens ?? 0);
   const statusLabel = member.active === true ? '進行中' : '歷史成員';
 
   return (
@@ -115,17 +97,20 @@ export default function Home() {
   const currentMember = useAuthStore((state) => state.currentMember);
   const groupId = useAuthStore((state) => state.groupId);
   const { members, loading: groupLoading, error: groupError } = useGroup(groupId);
-  const { tokens, loading: tokensLoading, error: tokensError } = useTokens(groupId, null);
 
-  const { totals, totalConfirmedTokens } = useMemo(() => buildConfirmedTotals(tokens), [tokens]);
   const memberSummary = useMemo(
-    () => buildMemberSummary(members, totals, currentMember?.id ?? null),
-    [currentMember?.id, members, totals],
+    () => buildMemberSummary(members, currentMember?.id ?? null),
+    [currentMember?.id, members],
   );
   const activeMembers = useMemo(() => memberSummary.filter((member) => member.active === true), [memberSummary]);
+  const totalConfirmedTokens = useMemo(
+    () =>
+      activeMembers.reduce((sum, member) => sum + (Number.isFinite(member.totalTokens) ? member.totalTokens : 0), 0),
+    [activeMembers],
+  );
 
-  const loading = groupLoading || tokensLoading;
-  const loadError = groupError || tokensError;
+  const loading = groupLoading;
+  const loadError = groupError;
   const hasMembers = memberSummary.length > 0;
   const hasReports = totalConfirmedTokens > 0;
 
@@ -135,7 +120,7 @@ export default function Home() {
         <PendingBanner />
 
         <section className="overflow-hidden rounded-[2rem] bg-white/95 p-6 shadow-lg shadow-rose-100">
-          <p className="text-sm font-semibold uppercase tracking-[0.3em] text-rose-500">Lunch time</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.3em] text-rose-700">Lunch time</p>
           <h1 className="mt-3 text-3xl font-black tracking-tight text-slate-950">午餐禁聊公事罰金箱</h1>
           <p className="mt-3 text-base font-semibold text-slate-900">{`嗨，${getMemberName(currentMember)}`}</p>
           <p className="mt-2 text-sm leading-6 text-slate-600">中午先吃飯，公事晚點再說也可以。</p>
@@ -225,7 +210,9 @@ export default function Home() {
             <section className="rounded-[2rem] bg-white p-5 shadow-lg shadow-rose-100">
               <div>
                 <h2 className="text-lg font-semibold text-slate-950">成員 Token 總覽</h2>
-                <p className="mt-1 text-sm leading-6 text-slate-600">包含 active 與 inactive 成員，全部以 reports 歷史紀錄為準。</p>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  active 成員依已確認紀錄統計，inactive 成員保留歷史總數。
+                </p>
               </div>
 
               <ul aria-label="成員 Token 總覽" className="mt-4 space-y-3">

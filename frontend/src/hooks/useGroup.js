@@ -56,7 +56,10 @@ function withReportTotals(members, reports) {
 
   return members.map((member) => ({
     ...member,
-    totalTokens: totals.get(member.id) ?? 0,
+    totalTokens:
+      member?.active === false && Number.isFinite(member?.totalTokens)
+        ? member.totalTokens
+        : totals.get(member.id) ?? 0,
   }));
 }
 

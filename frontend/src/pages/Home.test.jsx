@@ -9,7 +9,6 @@ const authState = vi.hoisted(() => ({
 }));
 
 const useGroupMock = vi.hoisted(() => vi.fn());
-const useTokensMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../store/authStore.js', () => ({
   useAuthStore: (selector) => selector(authState),
@@ -18,11 +17,6 @@ vi.mock('../store/authStore.js', () => ({
 vi.mock('../hooks/useGroup.js', () => ({
   useGroup: useGroupMock,
   default: useGroupMock,
-}));
-
-vi.mock('../hooks/useTokens.js', () => ({
-  useTokens: useTokensMock,
-  default: useTokensMock,
 }));
 
 vi.mock('../components/PendingBanner.jsx', () => ({
@@ -56,14 +50,8 @@ beforeEach(() => {
   };
   authState.groupId = 'main';
   useGroupMock.mockReset();
-  useTokensMock.mockReset();
   useGroupMock.mockReturnValue({
     members: [],
-    loading: false,
-    error: null,
-  });
-  useTokensMock.mockReturnValue({
-    tokens: [],
     loading: false,
     error: null,
   });
@@ -73,11 +61,6 @@ describe('Home page', () => {
   it('keeps the pending banner and shows loading feedback without misleading zero totals', () => {
     useGroupMock.mockReturnValue({
       members: [],
-      loading: true,
-      error: null,
-    });
-    useTokensMock.mockReturnValue({
-      tokens: [],
       loading: true,
       error: null,
     });
@@ -104,22 +87,12 @@ describe('Home page', () => {
     expect(screen.queryByText('0 Token')).toBe(null);
   });
 
-  it('derives total and per-member counts solely from reports, keeps currency text out, and greets the current member', () => {
+  it('derives total and per-member counts from useGroup totals, keeps currency text out, and greets the current member', () => {
     useGroupMock.mockReturnValue({
       members: [
         { id: 'inactive', name: '小美', active: false, color: '#0ea5e9', totalTokens: 999 },
-        { id: 'self', name: '自己', active: true, color: '#ec4899', totalTokens: 888, avatar: 'pig' },
-        { id: 'ming', name: '阿明', active: true, color: '#14b8a6', totalTokens: 777, avatar: 'frog' },
-      ],
-      loading: false,
-      error: null,
-    });
-    useTokensMock.mockReturnValue({
-      tokens: [
-        ...Array.from({ length: 101 }, (_, index) => ({ id: `report-self-${index + 1}`, targetId: 'self' })),
-        { id: 'report-ming-1', targetId: 'ming' },
-        { id: 'report-ming-2', targetId: 'ming' },
-        { id: 'report-inactive-1', targetId: 'inactive' },
+        { id: 'self', name: '自己', active: true, color: '#ec4899', totalTokens: 101, avatar: 'pig' },
+        { id: 'ming', name: '阿明', active: true, color: '#14b8a6', totalTokens: 2, avatar: 'frog' },
       ],
       loading: false,
       error: null,
@@ -127,9 +100,8 @@ describe('Home page', () => {
 
     renderHome();
 
-    expect(useTokensMock).toHaveBeenCalledWith('main', null);
     expect(screen.getByText('嗨，自己')).toBeTruthy();
-    expect(screen.getByText('104 Token')).toBeTruthy();
+    expect(screen.getByText('103 Token')).toBeTruthy();
     expect(screen.getByText('中午先吃飯，公事晚點再說也可以。')).toBeTruthy();
     expect(screen.getByText('3D 小豬展示區，下一個任務會換成正式模型。')).toBeTruthy();
 
@@ -139,8 +111,7 @@ describe('Home page', () => {
     expect(within(memberSummary).getByText('阿明')).toBeTruthy();
     expect(within(memberSummary).getByText('2 Token')).toBeTruthy();
     expect(within(memberSummary).getByText('小美')).toBeTruthy();
-    expect(within(memberSummary).getByText('1 Token')).toBeTruthy();
-    expect(screen.queryByText('999 Token')).toBe(null);
+    expect(within(memberSummary).getByText('999 Token')).toBeTruthy();
     expect(screen.queryByText('NT$')).toBe(null);
     expect(screen.queryByText('元')).toBe(null);
   });
