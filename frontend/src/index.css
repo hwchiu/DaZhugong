@@ -25,3 +25,15 @@ body {
 #root {
   min-height: 100vh;
 }
+
+.app-page {
+  min-height: calc(100vh - env(safe-area-inset-bottom, 0px) - 5.5rem);
+  padding-top: calc(env(safe-area-inset-top, 0px) + 1.5rem);
+  padding-bottom: 1.5rem;
+}
+
+@supports (height: 100dvh) {
+  .app-page {
+    min-height: calc(100dvh - env(safe-area-inset-bottom, 0px) - 5.5rem);
+  }
+}

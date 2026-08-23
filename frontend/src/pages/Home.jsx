@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import MemberAvatar from '../components/MemberAvatar.jsx';
 import PendingBanner from '../components/PendingBanner.jsx';
@@ -6,6 +6,7 @@ import { useGroup } from '../hooks/useGroup.js';
 import { useAuthStore } from '../store/authStore.js';
 
 const SAFE_LOAD_ERROR_MESSAGE = '目前無法同步首頁資料，請稍後再試。';
+const PiggyBank3D = lazy(() => import('../components/PiggyBank3D.jsx'));
 
 function getMemberName(member) {
   return member?.name ?? member?.displayName ?? '未命名成員';
@@ -115,7 +116,7 @@ export default function Home() {
   const hasReports = totalConfirmedTokens > 0;
 
   return (
-    <section className="min-h-screen bg-gradient-to-b from-rose-50 via-pink-50 to-orange-50 px-4 py-6 text-slate-900">
+    <section className="app-page bg-gradient-to-b from-rose-50 via-pink-50 to-orange-50 px-4 text-slate-900">
       <div className="mx-auto flex w-full max-w-md flex-col gap-4">
         <PendingBanner />
 
@@ -127,33 +128,51 @@ export default function Home() {
           <p className="mt-1 text-sm leading-6 text-slate-600">輕鬆聊、慢慢吃，Token 就留給真的忍不住的人。</p>
 
           <div className="mt-5 rounded-[2rem] bg-slate-950 px-5 py-6 text-white shadow-lg shadow-slate-300">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.24em] text-rose-200">本期已確認</p>
-                {loading ? (
-                  <div role="status" aria-live="polite" className="mt-3">
-                    <p className="text-2xl font-black">同步中…</p>
-                    <p className="mt-2 text-sm leading-6 text-slate-200">正在同步午餐 Token 與成員名單。</p>
-                  </div>
-                ) : loadError ? (
-                  <div role="alert" className="mt-3">
-                    <p className="text-2xl font-black">稍後再試</p>
-                    <p className="mt-2 text-sm leading-6 text-slate-200">{SAFE_LOAD_ERROR_MESSAGE}</p>
-                  </div>
-                ) : (
-                  <>
-                    <p className="mt-3 text-4xl font-black tracking-tight">{formatTokenCount(totalConfirmedTokens)}</p>
-                    <p className="mt-2 text-sm leading-6 text-slate-200">只看已確認 reports，不顯示任何真實貨幣。</p>
-                  </>
-                )}
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-rose-200">本期已確認</p>
+            {loading ? (
+              <div role="status" aria-live="polite" className="mt-3">
+                <p className="text-2xl font-black">同步中…</p>
+                <p className="mt-2 text-sm leading-6 text-slate-200">正在同步午餐 Token 與成員名單。</p>
               </div>
+            ) : loadError ? (
+              <div role="alert" className="mt-3">
+                <p className="text-2xl font-black">稍後再試</p>
+                <p className="mt-2 text-sm leading-6 text-slate-200">{SAFE_LOAD_ERROR_MESSAGE}</p>
+              </div>
+            ) : (
+              <>
+                <p className="mt-3 text-4xl font-black tracking-tight">{formatTokenCount(totalConfirmedTokens)}</p>
+                <p className="mt-2 text-sm leading-6 text-slate-200">只看已確認 reports，不顯示任何真實貨幣。</p>
+              </>
+            )}
 
-              <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-[1.75rem] bg-white/10 text-5xl">
-                <span aria-hidden="true">🐷</span>
-              </div>
+            <div className="mt-5">
+              {loading || loadError ? (
+                <div
+                  aria-hidden="true"
+                  className="flex h-72 items-center justify-center rounded-[1.75rem] border border-white/15 bg-white/5 px-5 text-center text-sm font-semibold text-slate-300"
+                >
+                  小豬撲滿會在資料同步後出現
+                </div>
+              ) : (
+                <Suspense
+                  fallback={(
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className="flex h-72 items-center justify-center rounded-[1.75rem] border border-white/15 bg-white/5 px-5 text-center text-sm font-semibold text-slate-100"
+                    >
+                      正在準備 3D 小豬…
+                    </div>
+                  )}
+                >
+                  <PiggyBank3D members={memberSummary} />
+                </Suspense>
+              )}
             </div>
-
-            <p className="mt-4 text-sm leading-6 text-slate-200">3D 小豬展示區，下一個任務會換成正式模型。</p>
+            <p className="mt-3 text-center text-xs leading-5 text-slate-300">
+              左右拖曳可旋轉；代表物件會依成員 Token 顏色與數量呈現。
+            </p>
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">

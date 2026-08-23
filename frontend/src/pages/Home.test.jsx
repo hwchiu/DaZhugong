@@ -23,6 +23,15 @@ vi.mock('../components/PendingBanner.jsx', () => ({
   default: () => <div>保留中的待確認提醒</div>,
 }));
 
+vi.mock('../components/PiggyBank3D.jsx', () => ({
+  default: ({ members }) => (
+    <div data-testid="piggy-bank-3d">
+      3D 小豬：{members.length} 位成員，共{' '}
+      {members.reduce((sum, member) => sum + (member.totalTokens ?? 0), 0)} Token
+    </div>
+  ),
+}));
+
 import Home from './Home.jsx';
 
 function renderHome() {
@@ -87,7 +96,7 @@ describe('Home page', () => {
     expect(screen.queryByText('0 Token')).toBe(null);
   });
 
-  it('derives total and per-member counts from useGroup totals, keeps currency text out, and greets the current member', () => {
+  it('derives total and per-member counts from useGroup totals, lazy-loads the 3D pig, and keeps currency text out', async () => {
     useGroupMock.mockReturnValue({
       members: [
         { id: 'inactive', name: '小美', active: false, color: '#0ea5e9', totalTokens: 999 },
@@ -103,7 +112,8 @@ describe('Home page', () => {
     expect(screen.getByText('嗨，自己')).toBeTruthy();
     expect(screen.getByText('103 Token')).toBeTruthy();
     expect(screen.getByText('中午先吃飯，公事晚點再說也可以。')).toBeTruthy();
-    expect(screen.getByText('3D 小豬展示區，下一個任務會換成正式模型。')).toBeTruthy();
+    expect((await screen.findByTestId('piggy-bank-3d')).textContent).toContain('1102 Token');
+    expect(screen.queryByText('3D 小豬展示區，下一個任務會換成正式模型。')).toBe(null);
 
     const memberSummary = screen.getByRole('list', { name: '成員 Token 總覽' });
     expect(within(memberSummary).getByText('自己')).toBeTruthy();
