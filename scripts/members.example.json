@@ -1,0 +1,19 @@
+{
+  "groupId": "main",
+  "members": [
+    {
+      "id": "member1",
+      "name": "Example Person",
+      "avatar": "pig",
+      "color": "#FF6B8A",
+      "pin": "<SET_UNIQUE_PIN>"
+    },
+    {
+      "id": "member2",
+      "name": "Example Person 2",
+      "avatar": "cat",
+      "color": "#4A90E2",
+      "pin": "<SET_UNIQUE_PIN>"
+    }
+  ]
+}

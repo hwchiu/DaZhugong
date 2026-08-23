@@ -54,7 +54,9 @@ DaZhugong/
 │   └── test/
 │       └── callables.test.js             # auth、冒用、節流、並行確認測試
 ├── scripts/
-│   └── seed.js                           # Firestore 初始資料
+│   ├── seed.js                           # Firestore 初始資料（讀取 members.local.json）
+│   ├── members.example.json              # 可提交的範本（無可用 PIN）
+│   └── members.local.json                # 本機私有設定（勿提交）
 ├── firestore.rules                       # Firestore 安全規則
 ├── firebase.json                         # Firebase 設定
 └── .firebaserc                           # Firebase 專案綁定
@@ -155,6 +157,7 @@ node_modules/
 frontend/.env.local
 frontend/dist/
 scripts/serviceAccountKey.json
+scripts/members.local.json
 *.log
 .DS_Store
 ```
@@ -207,17 +210,16 @@ Run: `npm install`
 const admin = require('firebase-admin');
 const bcrypt = require('bcryptjs');
 const serviceAccount = require('./serviceAccountKey.json');
+const membersConfig = require('./members.local.json');
 
 admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 const db = admin.firestore();
 
-const members = [
-  { id: 'member1', authUid: 'dazhugong_main_member1', name: '你', avatar: 'pig', color: '#FF6B8A' },
-  { id: 'member2', authUid: 'dazhugong_main_member2', name: 'Kevin', avatar: 'cat', color: '#4A90E2' },
-  { id: 'member3', authUid: 'dazhugong_main_member3', name: 'Amy', avatar: 'frog', color: '#7ED321' },
-  { id: 'member4', authUid: 'dazhugong_main_member4', name: 'Jamie', avatar: 'bear', color: '#9B59B6' },
-  { id: 'member5', authUid: 'dazhugong_main_member5', name: 'Vivian', avatar: 'dog', color: '#F39C12' },
-];
+function assertValidPin(pin, memberId) {
+  if (!/^\d{4}$/.test(pin)) {
+    throw new Error(`Invalid PIN for ${memberId}: must be exactly 4 digits`);
+  }
+}
 
 async function ensureAuthUser(member) {
   try {
@@ -236,9 +238,18 @@ async function seed() {
     lunchEnd: '13:00',
   });
 
-  for (const member of members) {
-    const pinHash = await bcrypt.hash('1234', 12);
+  const seenPins = new Set();
+
+  for (const member of membersConfig.members) {
+    assertValidPin(member.pin, member.id);
+    if (seenPins.has(member.pin)) {
+      throw new Error(`Duplicate PIN detected for ${member.id}`);
+    }
+    seenPins.add(member.pin);
+
+    const pinHash = await bcrypt.hash(member.pin, 12);
     await ensureAuthUser(member);
+
     await groupRef.collection('members').doc(member.id).set({
       authUid: member.authUid,
       name: member.name,
@@ -253,11 +264,18 @@ async function seed() {
       lastFailedAt: null,
       lastSuccessfulAt: null,
     });
-    console.log(`✅ ${member.id} → ${member.authUid}`);
   }
 }
 
-seed()
+seed();
+```
+
+Seed command:
+
+```bash
+cp scripts/members.example.json scripts/members.local.json
+# 編輯 scripts/members.local.json，為每位 member 設定唯一且私有的 4 位 PIN
+npm run seed
   .then(() => process.exit(0))
   .catch((error) => { console.error(error); process.exit(1); });
 ```
@@ -1226,7 +1244,7 @@ export default function Settings() {
 cd frontend && npm run dev
 ```
 
-預期：登入頁出現 → 選成員 + 輸入 `1234` → Firebase Auth user UID 等於 seed 的 `authUid` → 進入主畫面。重新整理後由 Firebase Auth 恢復，不依賴可竄改的 member localStorage。
+預期：登入頁出現 → 選成員 + 輸入 `members.local.json` 內配置的私有 PIN → Firebase Auth user UID 等於 seed 的 `authUid` → 進入主畫面。重新整理後由 Firebase Auth 恢復，不依賴可竄改的 member localStorage。
 
 - [ ] **Step 7: Commit**
 
@@ -1417,7 +1435,7 @@ export default function Vote() {
 
 ```
 1. npm run dev 開啟 app
-2. 用「你」帳號登入（PIN: 1234）
+2. 用「你」帳號登入（使用 `scripts/members.local.json` 中配置的私有 PIN）
 3. 前往投票頁，選 Kevin
 4. 點舉報按鈕
 5. 前往 Firebase Console → Firestore → groups/main/tokens
@@ -1555,7 +1573,7 @@ export default function Pending() {
 
 ```
 1. 用「你」帳號登入 → 舉報 Kevin
-2. 重新登入為 Kevin（登出 → 選 Kevin → PIN: 1234）
+2. 重新登入為 Kevin（登出 → 選 Kevin → 使用私有 PIN）
 3. 預期：主畫面頂部出現紅色「你被舉報講公事了！」橫幅
 4. 點橫幅進入 Pending 頁，看到舉報
 5. 點「我認了」
@@ -2139,7 +2157,7 @@ export default function Settings() {
       </button>
 
       <p className="text-center text-xs text-gray-300">大豬公 v1.0.0 🐷</p>
-      <p className="text-center text-xs text-gray-200 mt-1">預設 PIN：1234（請自行更改）</p>
+      <p className="text-center text-xs text-gray-200 mt-1">PIN 由 `scripts/members.local.json` 私下設定，不會在 UI 顯示</p>
     </div>
   );
 }
@@ -2207,7 +2225,7 @@ https://dazhugong-4f185.web.app
 
 ```
 □ 登入頁顯示 5 位成員頭像
-□ 選成員 + 輸入 1234 → Firebase Auth UID 等於該 member.authUid
+□ 選成員 + 輸入各自的私有 PIN → Firebase Auth UID 等於該 member.authUid
 □ 重新整理後由 Firebase Auth 恢復登入，localStorage 沒有可指定 member 身分的資料
 □ 連續 5 次錯誤 PIN 後鎖定，鎖定期間正確 PIN 也不能登入
 □ 主畫面顯示 3D 玻璃豬公

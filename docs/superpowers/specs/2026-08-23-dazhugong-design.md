@@ -47,11 +47,13 @@ CI/CD：GitHub Actions → firebase deploy
 ## 四、登入與授權機制（漸進式設計）
 
 **Phase 1（當前實作，維持簡單 PIN UX）：**
-1. 使用者選擇頭像/名字並輸入 4 位 PIN。
+1. 使用者選擇頭像/名字並輸入私有 4 位 PIN。
 2. 前端呼叫 `loginWithPin({ groupId, memberId, pin })`。這是唯一接受 `memberId` 作為登入候選身分的 callable。
 3. `loginWithPin` 從完全禁止客戶端存取的 `/groups/{groupId}/memberAuth/{memberId}` 讀取 `pinHash` 與失敗/鎖定狀態，在 Firestore transaction 內套用「5 次失敗鎖定 15 分鐘」的伺服器端節流。
 4. PIN 正確時，Function 讀取該 member 預先 seed 的穩定 `authUid`，以 Firebase Admin SDK 建立 custom token。
 5. 前端以 `signInWithCustomToken` 登入 Firebase Authentication；Firebase Auth persistence 負責恢復登入，前端不得把任意 member 物件當成授權身分持久化。
+
+Seed 流程必須從未提交的 `scripts/members.local.json` 載入 member 顯示資料與每位 member 各自唯一的 4 位 PIN；範本檔為 `scripts/members.example.json`，只能包含不可用的示例值或 `<SET_UNIQUE_PIN>` 佔位，並引導開發者先複製成 local 檔再填入私有 PIN。seed 時只把 PIN 驗證、雜湊並寫入 server-only 的 `memberAuth`，不得在任何 log、UI、文件或 acceptance step 中顯示或暗示共用預設 PIN。
 
 所有具權限的 callable（包含 `reportToken`、`confirmToken`）都必須：
 - 設定 `enforceAppCheck: true`。
@@ -179,7 +181,7 @@ firebase login:ci
 
 1. **Phase 1：基礎建設**
    - Firebase 專案初始化、Firestore 規則與 `memberAuth` deny-all 設定
-   - Seed 穩定 `authUid`、Firebase Auth user、PIN hash 與節流狀態
+   - Seed 穩定 `authUid`、Firebase Auth user、每位 member 的私有 PIN hash 與節流狀態（來源：`scripts/members.local.json`）
    - React 專案建立（Vite）、Firebase Auth/App Check 初始化
    - Cloud Functions scaffold、驗證/授權與 transaction 測試
    - 前後端 packages 都存在且測試可執行後，再加入 GitHub Actions CI/CD
