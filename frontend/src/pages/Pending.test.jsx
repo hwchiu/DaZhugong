@@ -128,6 +128,7 @@ describe('Pending page', () => {
     expect(screen.getByText('阿明')).toBeTruthy();
     expect(screen.getByText('曾經送出待確認的一票')).toBeTruthy();
     expect(screen.getByText(/時間稍後同步/)).toBeTruthy();
+    expect(screen.getAllByText('送票人')[0].className).toContain('text-slate-800');
 
     await user.click(screen.getAllByRole('button', { name: '確認 +1 Token' })[0]);
 

@@ -183,8 +183,8 @@ export default function Pending() {
                       <div className="flex flex-wrap items-center gap-2">
                         <h2 className="text-lg font-semibold text-slate-900">{reporterName}</h2>
                         <span
-                          className="rounded-full px-3 py-1 text-xs font-semibold"
-                          style={{ backgroundColor: `${accentColor}20`, color: accentColor }}
+                          className="rounded-full border px-3 py-1 text-xs font-semibold text-slate-800"
+                          style={{ backgroundColor: `${accentColor}20`, borderColor: `${accentColor}55` }}
                         >
                           送票人
                         </span>
