@@ -131,6 +131,12 @@ async function writeMemberDoc(firestore, memberRef, member) {
     const payload = buildMemberPayload(member);
 
     if (snapshot.exists) {
+      const existingAuthUid = normalizeMemberText(snapshot.get('authUid'));
+
+      if (!existingAuthUid || existingAuthUid !== member.authUid) {
+        throw new Error(`Member ${member.id} authUid does not match configured value.`);
+      }
+
       await transaction.set(memberRef, payload, { merge: true });
       return;
     }

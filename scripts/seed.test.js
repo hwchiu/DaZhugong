@@ -603,3 +603,68 @@ test('initializes new member docs with totalTokens zero when no concurrent write
   assert.equal(harness.store.get('groups/main/members/member1').totalTokens, 0);
   assert.equal(harness.store.get('groups/main/members/member1').authUid, 'dazhugong_main_member1');
 });
+
+test('aborts member merge when the transaction snapshot authUid changed after preflight', async () => {
+  const { seed } = require('./seed');
+  const config = withPins(cloneMembers(1), ['1001']);
+  const harness = createFirestoreHarness({
+    preflightSnapshots: {
+      'groups/main/members/member1': {
+        authUid: 'dazhugong_main_member1',
+      },
+    },
+    existingDocs: {
+      'groups/main': { name: 'existing group' },
+      'groups/main/members/member1': {
+        authUid: 'unexpected-auth-uid',
+        name: 'Existing Name',
+        avatar: 'existing-avatar',
+        color: '#111111',
+        totalTokens: 7,
+      },
+    },
+  });
+
+  const fakeAdmin = {
+    apps: [],
+    initializeApp() {
+      harness.calls.push({ type: 'initializeApp' });
+    },
+    credential: {
+      cert(serviceAccount) {
+        harness.calls.push({ type: 'credential.cert', serviceAccount: { ...serviceAccount } });
+        return { serviceAccount };
+      },
+    },
+    firestore: Object.assign(() => harness.firestore, {
+      FieldValue: { serverTimestamp: () => 'server-timestamp' },
+    }),
+    auth: () => harness.auth,
+  };
+  const fakeFs = {
+    async readFile(filePath) {
+      if (String(filePath).endsWith('serviceAccountKey.json')) {
+        return JSON.stringify({ project_id: 'test' });
+      }
+      if (String(filePath).endsWith('members.local.json')) {
+        return JSON.stringify({ members: config.members });
+      }
+      return fs.readFile(filePath, 'utf8');
+    },
+  };
+
+  await assert.rejects(
+    seed({
+      serviceAccountPath: '/virtual/serviceAccountKey.json',
+      membersPath: '/virtual/members.local.json',
+    }, {
+      fs: fakeFs,
+      admin: fakeAdmin,
+    }),
+    /authUid/i
+  );
+
+  assert.equal(harness.store.get('groups/main/members/member1').authUid, 'unexpected-auth-uid');
+  assert.equal(harness.calls.some((call) => call.type === 'tx.set' && call.path === 'groups/main/members/member1'), false);
+  assert.equal(harness.calls.some((call) => call.type === 'tx.create' && call.path === 'groups/main/members/member1'), false);
+});
