@@ -297,7 +297,7 @@ export default function PiggyBank3D({ members = [] }) {
           bevelThickness: 0.008,
         }));
         const tokenMaterials = new Map();
-        const tokenMeshes = sample.tokens.map((token, index) => {
+        const tokenMeshes = sample.tokens.map((_, index) => {
           const tokenColor = STAR_TOKEN_PALETTE[index % STAR_TOKEN_PALETTE.length];
           if (!tokenMaterials.has(tokenColor)) {
             tokenMaterials.set(tokenColor, trackMaterial(new THREE.MeshStandardMaterial({
@@ -444,7 +444,7 @@ export default function PiggyBank3D({ members = [] }) {
         />
       )}
       <figcaption className="sr-only">
-        小豬內的彩色星形 Token 依成員累計數量取樣呈現，最多顯示 {MAX_RENDERED_TOKENS} 個物件。
+        小豬內的彩色星形 Token 依總 Token 數量取樣呈現，最多顯示 {MAX_RENDERED_TOKENS} 個物件。
       </figcaption>
     </figure>
   );
