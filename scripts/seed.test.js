@@ -2,7 +2,12 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const fs = require('node:fs/promises');
 
-const { buildGroupPayload, validateSeedConfig } = require('./seed');
+const {
+  buildGroupPayload,
+  buildMemberPayload,
+  ensureAuthUser,
+  validateSeedConfig,
+} = require('./seed');
 const example = require('./members.example.json');
 
 function withPins(config, pins) {
@@ -209,6 +214,94 @@ test('builds the main group payload with lunch metadata and preserves extras', (
     lunchEnd: '13:00',
     memberIds: ['member1', 'member2'],
     updatedAt: payload.updatedAt,
+  });
+});
+
+test('public member payload contains login identity and no PIN-derived secret', () => {
+  const member = {
+    id: 'member1',
+    authUid: 'dazhugong_main_member1',
+    name: '你',
+    avatar: 'pig',
+    color: '#FF6B8A',
+    pin: '1001',
+  };
+
+  const payload = buildMemberPayload(member);
+
+  assert.deepEqual(payload, {
+    authUid: 'dazhugong_main_member1',
+    loginEmail: 'dazhugong_main_member1@dazhugong.invalid',
+    name: '你',
+    avatar: 'pig',
+    color: '#FF6B8A',
+  });
+  assert.equal('pin' in payload, false);
+  assert.equal('pinHash' in payload, false);
+  assert.equal('password' in payload, false);
+});
+
+test('creates a missing Auth user with deterministic email and password', async () => {
+  const calls = [];
+  const auth = {
+    async getUser(uid) {
+      calls.push({ type: 'getUser', uid });
+      throw Object.assign(new Error('missing'), { code: 'auth/user-not-found' });
+    },
+    async createUser(data) {
+      calls.push({ type: 'createUser', data });
+      return { uid: data.uid };
+    },
+  };
+
+  await ensureAuthUser(auth, {
+    authUid: 'dazhugong_main_member1',
+    name: '你',
+    pin: '1001',
+  });
+
+  assert.deepEqual(calls[1], {
+    type: 'createUser',
+    data: {
+      uid: 'dazhugong_main_member1',
+      email: 'dazhugong_main_member1@dazhugong.invalid',
+      displayName: '你',
+      password: 'dazhugong.firebase-auth.v1:dazhugong_main_member1:1001',
+    },
+  });
+});
+
+test('updates an existing Auth user email, display name, and password', async () => {
+  const calls = [];
+  const auth = {
+    async getUser(uid) {
+      calls.push({ type: 'getUser', uid });
+      return {
+        uid,
+        email: 'old@example.invalid',
+        displayName: 'Old Name',
+      };
+    },
+    async updateUser(uid, data) {
+      calls.push({ type: 'updateUser', uid, data });
+      return { uid, ...data };
+    },
+  };
+
+  await ensureAuthUser(auth, {
+    authUid: 'dazhugong_main_member1',
+    name: '你',
+    pin: '1001',
+  });
+
+  assert.deepEqual(calls[1], {
+    type: 'updateUser',
+    uid: 'dazhugong_main_member1',
+    data: {
+      email: 'dazhugong_main_member1@dazhugong.invalid',
+      displayName: '你',
+      password: 'dazhugong.firebase-auth.v1:dazhugong_main_member1:1001',
+    },
   });
 });
 
@@ -488,6 +581,7 @@ test('preserves existing totalTokens by omitting it from member updates', async 
   assert.ok(memberWrite, 'Expected a member write.');
   assert.deepEqual(memberWrite.data, {
     authUid: 'dazhugong_main_member1',
+    loginEmail: 'dazhugong_main_member1@dazhugong.invalid',
     name: '你',
     avatar: 'pig',
     color: '#FF6B8A',
@@ -496,7 +590,7 @@ test('preserves existing totalTokens by omitting it from member updates', async 
   assert.equal(harness.store.get('groups/main/members/member1').totalTokens, 7);
 });
 
-test('creates new member docs with totalTokens initialized to zero without clobbering a concurrent increment', async () => {
+test('merges a concurrently created member without clobbering its legacy totalTokens', async () => {
   const { seed } = require('./seed');
   const config = withPins(cloneMembers(1), ['1001']);
   const harness = createFirestoreHarness({
@@ -555,7 +649,7 @@ test('creates new member docs with totalTokens initialized to zero without clobb
   assert.ok(harness.calls.some((call) => call.type === 'runTransaction' || call.type === 'tx.create' || call.type === 'tx.update'));
 });
 
-test('initializes new member docs with totalTokens zero when no concurrent write occurs', async () => {
+test('creates new member docs without a denormalized totalTokens field', async () => {
   const { seed } = require('./seed');
   const config = withPins(cloneMembers(1), ['1001']);
   const harness = createFirestoreHarness({
@@ -600,8 +694,12 @@ test('initializes new member docs with totalTokens zero when no concurrent write
     admin: fakeAdmin,
   });
 
-  assert.equal(harness.store.get('groups/main/members/member1').totalTokens, 0);
+  assert.equal('totalTokens' in harness.store.get('groups/main/members/member1'), false);
   assert.equal(harness.store.get('groups/main/members/member1').authUid, 'dazhugong_main_member1');
+  assert.equal(
+    harness.calls.some((call) => call.path?.includes('/memberAuth/')),
+    false,
+  );
 });
 
 test('aborts member merge when the transaction snapshot authUid changed after preflight', async () => {

@@ -8,9 +8,7 @@ const useGroupMock = vi.hoisted(() => ({
 
 const firebaseState = vi.hoisted(() => ({
   auth: { service: 'auth' },
-  functions: { service: 'functions' },
-  loginCallable: vi.fn(),
-  signInWithCustomToken: vi.fn(),
+  signInWithEmailAndPassword: vi.fn(),
 }));
 
 const authStoreState = vi.hoisted(() => ({
@@ -25,7 +23,6 @@ vi.mock('../hooks/useGroup.js', () => ({
 
 vi.mock('../firebase.js', () => ({
   auth: firebaseState.auth,
-  functions: firebaseState.functions,
 }));
 
 vi.mock('../store/authStore.js', () => ({
@@ -33,19 +30,31 @@ vi.mock('../store/authStore.js', () => ({
 }));
 
 vi.mock('firebase/auth', () => ({
-  signInWithCustomToken: firebaseState.signInWithCustomToken,
-}));
-
-vi.mock('firebase/functions', () => ({
-  httpsCallable: vi.fn(() => firebaseState.loginCallable),
+  signInWithEmailAndPassword: firebaseState.signInWithEmailAndPassword,
 }));
 
 import Login from './Login.jsx';
 
 function renderLogin({
   members = [
-    { id: 'member-1', name: '你', avatar: 'pig', color: '#FF6B8A', totalTokens: 3 },
-    { id: 'member-2', name: 'Kevin', avatar: 'cat', color: '#4A90E2', totalTokens: 8 },
+    {
+      id: 'member-1',
+      authUid: 'dazhugong_main_member1',
+      loginEmail: 'dazhugong_main_member1@dazhugong.invalid',
+      name: '你',
+      avatar: 'pig',
+      color: '#FF6B8A',
+      totalTokens: 3,
+    },
+    {
+      id: 'member-2',
+      authUid: 'dazhugong_main_member2',
+      loginEmail: 'dazhugong_main_member2@dazhugong.invalid',
+      name: 'Kevin',
+      avatar: 'cat',
+      color: '#4A90E2',
+      totalTokens: 8,
+    },
   ],
   loading = false,
   error = null,
@@ -76,8 +85,7 @@ function createDeferred() {
 
 beforeEach(() => {
   useGroupMock.useGroup.mockReset();
-  firebaseState.loginCallable = vi.fn();
-  firebaseState.signInWithCustomToken.mockReset();
+  firebaseState.signInWithEmailAndPassword.mockReset();
   authStoreState.authError = null;
   authStoreState.clearAuthError = vi.fn();
   authStoreState.useAuthStore.mockImplementation((selector) =>
@@ -137,8 +145,7 @@ describe('Login', () => {
   it('locks member selection and PIN input while the login request is pending', async () => {
     const user = userEvent.setup();
     const deferred = createDeferred();
-    firebaseState.loginCallable.mockReturnValue(deferred.promise);
-    firebaseState.signInWithCustomToken.mockResolvedValue({ uid: 'auth-1' });
+    firebaseState.signInWithEmailAndPassword.mockReturnValue(deferred.promise);
 
     renderLogin();
 
@@ -159,15 +166,15 @@ describe('Login', () => {
     expect(screen.getByRole('button', { name: '選擇成員 Kevin' }).getAttribute('aria-pressed')).toBe('false');
     expect(screen.getByLabelText('PIN 碼').value).toBe('2468');
 
-    deferred.resolve({ data: { customToken: 'custom-token-123' } });
+    deferred.resolve({ user: { uid: 'dazhugong_main_member1' } });
 
-    await waitFor(() => expect(firebaseState.signInWithCustomToken).toHaveBeenCalledWith(firebaseState.auth, 'custom-token-123'));
+    await waitFor(() => expect(firebaseState.signInWithEmailAndPassword).toHaveBeenCalledTimes(1));
   });
 
   it('clears the PIN and any visible error when the selected member changes', async () => {
     const user = userEvent.setup();
-    firebaseState.loginCallable.mockRejectedValue({
-      code: 'functions/invalid-argument',
+    firebaseState.signInWithEmailAndPassword.mockRejectedValue({
+      code: 'auth/invalid-credential',
       message: 'backend should stay hidden',
     });
 
@@ -190,8 +197,8 @@ describe('Login', () => {
 
   it('shows the signed-out auth error as an alert and clears it independently from PIN errors', async () => {
     const user = userEvent.setup();
-    firebaseState.loginCallable.mockRejectedValue({
-      code: 'functions/permission-denied',
+    firebaseState.signInWithEmailAndPassword.mockRejectedValue({
+      code: 'auth/invalid-credential',
       message: 'pinHash comparison failed for member-1',
     });
 
@@ -213,25 +220,23 @@ describe('Login', () => {
     expect(alerts[0].textContent).not.toContain('Unable to verify your account access right now.');
   });
 
-  it('submits the selected member PIN and signs in with the custom token on enter', async () => {
+  it('derives the selected member credential and signs in with email/password on enter', async () => {
     const user = userEvent.setup();
-    firebaseState.loginCallable.mockResolvedValue({
-      data: { customToken: 'custom-token-123' },
+    firebaseState.signInWithEmailAndPassword.mockResolvedValue({
+      user: { uid: 'dazhugong_main_member2' },
     });
-    firebaseState.signInWithCustomToken.mockResolvedValue({ uid: 'auth-1' });
 
     renderLogin();
 
     await user.click(screen.getByRole('button', { name: '選擇成員 Kevin' }));
     await user.type(screen.getByLabelText('PIN 碼'), '2468{Enter}');
 
-    await waitFor(() => expect(firebaseState.loginCallable).toHaveBeenCalledTimes(1));
-    expect(firebaseState.loginCallable).toHaveBeenCalledWith({
-      groupId: 'main',
-      memberId: 'member-2',
-      pin: '2468',
-    });
-    expect(firebaseState.signInWithCustomToken).toHaveBeenCalledWith(firebaseState.auth, 'custom-token-123');
+    await waitFor(() => expect(firebaseState.signInWithEmailAndPassword).toHaveBeenCalledTimes(1));
+    expect(firebaseState.signInWithEmailAndPassword).toHaveBeenCalledWith(
+      firebaseState.auth,
+      'dazhugong_main_member2@dazhugong.invalid',
+      'dazhugong.firebase-auth.v1:dazhugong_main_member2:2468',
+    );
     expect(screen.queryByRole('alert')).toBe(null);
   });
 
@@ -251,8 +256,8 @@ describe('Login', () => {
 
   it('shows a safe generic error for a wrong PIN without leaking backend details', async () => {
     const user = userEvent.setup();
-    firebaseState.loginCallable.mockRejectedValue({
-      code: 'functions/permission-denied',
+    firebaseState.signInWithEmailAndPassword.mockRejectedValue({
+      code: 'auth/wrong-password',
       message: 'pinHash comparison failed for member-1',
     });
 
@@ -265,13 +270,13 @@ describe('Login', () => {
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('登入失敗');
     expect(alert.textContent).not.toContain('pinHash');
-    expect(firebaseState.signInWithCustomToken).not.toHaveBeenCalled();
+    expect(firebaseState.signInWithEmailAndPassword).toHaveBeenCalledTimes(1);
   });
 
   it('shows the throttled message when the backend locks out repeated attempts', async () => {
     const user = userEvent.setup();
-    firebaseState.loginCallable.mockRejectedValue({
-      code: 'functions/resource-exhausted',
+    firebaseState.signInWithEmailAndPassword.mockRejectedValue({
+      code: 'auth/too-many-requests',
       message: 'too many attempts',
     });
 
@@ -284,28 +289,10 @@ describe('Login', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('嘗試次數過多');
   });
 
-  it('rejects malformed callable responses with a safe generic error', async () => {
-    const user = userEvent.setup();
-    firebaseState.loginCallable.mockResolvedValue({
-      data: { customToken: '' },
-    });
-
-    renderLogin();
-
-    await user.click(screen.getByRole('button', { name: '選擇成員 Kevin' }));
-    await user.type(screen.getByLabelText('PIN 碼'), '2468');
-    await user.click(screen.getByRole('button', { name: '登入' }));
-
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('登入失敗');
-    expect(firebaseState.signInWithCustomToken).not.toHaveBeenCalled();
-  });
-
   it('prevents duplicate submit attempts while the login request is still pending', async () => {
     const user = userEvent.setup();
     const deferred = createDeferred();
-    firebaseState.loginCallable.mockReturnValue(deferred.promise);
-    firebaseState.signInWithCustomToken.mockResolvedValue({ uid: 'auth-1' });
+    firebaseState.signInWithEmailAndPassword.mockReturnValue(deferred.promise);
 
     renderLogin();
 
@@ -316,12 +303,12 @@ describe('Login', () => {
     await user.click(submitButton);
     await user.click(submitButton);
 
-    expect(firebaseState.loginCallable).toHaveBeenCalledTimes(1);
+    expect(firebaseState.signInWithEmailAndPassword).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('status').textContent).toContain('登入中');
     expect(screen.getByRole('button', { name: '登入中' }).disabled).toBe(true);
 
-    deferred.resolve({ data: { customToken: 'custom-token-123' } });
+    deferred.resolve({ user: { uid: 'dazhugong_main_member2' } });
 
-    await waitFor(() => expect(firebaseState.signInWithCustomToken).toHaveBeenCalledWith(firebaseState.auth, 'custom-token-123'));
+    await waitFor(() => expect(firebaseState.signInWithEmailAndPassword).toHaveBeenCalledTimes(1));
   });
 });

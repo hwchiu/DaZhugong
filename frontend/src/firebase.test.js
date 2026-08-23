@@ -19,10 +19,6 @@ const firebaseFirestoreMock = vi.hoisted(() => ({
   getFirestore: vi.fn((app) => ({ service: 'firestore', app })),
 }));
 
-const firebaseFunctionsMock = vi.hoisted(() => ({
-  getFunctions: vi.fn((app, region) => ({ service: 'functions', app, region })),
-}));
-
 vi.mock('firebase/app', () => ({
   initializeApp: firebaseAppMock.initializeApp,
   getApps: firebaseAppMock.getApps,
@@ -35,10 +31,6 @@ vi.mock('firebase/auth', () => ({
 
 vi.mock('firebase/firestore', () => ({
   getFirestore: firebaseFirestoreMock.getFirestore,
-}));
-
-vi.mock('firebase/functions', () => ({
-  getFunctions: firebaseFunctionsMock.getFunctions,
 }));
 
 function makeFirebaseEnv(overrides = {}) {
@@ -73,7 +65,6 @@ beforeEach(() => {
   firebaseAppMock.getApp.mockClear();
   firebaseAuthMock.getAuth.mockClear();
   firebaseFirestoreMock.getFirestore.mockClear();
-  firebaseFunctionsMock.getFunctions.mockClear();
 });
 
 describe('firebase configuration helpers', () => {
@@ -103,13 +94,12 @@ describe('firebase configuration helpers', () => {
       app: services.app,
       auth: services.auth,
       db: services.db,
-      functions: services.functions,
     });
     expect(services).not.toHaveProperty('appCheck');
+    expect(services).not.toHaveProperty('functions');
     expect(firebaseModule.firebaseApp).toBe(services.app);
     expect(firebaseModule.auth).toBe(services.auth);
     expect(firebaseModule.db).toBe(services.db);
-    expect(firebaseModule.functions).toBe(services.functions);
-    expect(firebaseFunctionsMock.getFunctions).toHaveBeenCalledWith(services.app, 'asia-east1');
+    expect(firebaseModule).not.toHaveProperty('functions');
   });
 });

@@ -1,8 +1,8 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
-const bcrypt = require('bcryptjs');
 const admin = require('firebase-admin');
+const { deriveFirebasePassword, deriveLoginEmail } = require('./credentials');
 
 function readJson(fsModule, filePath) {
   return fsModule.readFile(filePath, 'utf8').then((content) => JSON.parse(content));
@@ -103,6 +103,7 @@ function buildGroupPayload({ groupId, members, existingGroup = {}, fieldValue = 
 function buildMemberPayload(member) {
   return {
     authUid: member.authUid,
+    loginEmail: deriveLoginEmail(member.authUid),
     name: member.name,
     avatar: member.avatar,
     color: member.color,
@@ -141,25 +142,25 @@ async function writeMemberDoc(firestore, memberRef, member) {
       return;
     }
 
-    await transaction.create(memberRef, {
-      ...payload,
-      totalTokens: 0,
-    });
+    await transaction.create(memberRef, payload);
   });
 }
 
 async function ensureAuthUser(auth, member) {
+  const credentials = {
+    email: deriveLoginEmail(member.authUid),
+    displayName: member.name,
+    password: deriveFirebasePassword(member.authUid, member.pin),
+  };
+
   try {
-    const userRecord = await auth.getUser(member.authUid);
-    if (userRecord.displayName !== member.name) {
-      await auth.updateUser(member.authUid, { displayName: member.name });
-    }
-    return userRecord;
+    await auth.getUser(member.authUid);
+    return auth.updateUser(member.authUid, credentials);
   } catch (error) {
     if (error && error.code === 'auth/user-not-found') {
       return auth.createUser({
         uid: member.authUid,
-        displayName: member.name,
+        ...credentials,
       });
     }
     throw error;
@@ -171,7 +172,6 @@ async function seed(options = {}, deps = {}) {
   const membersPath = options.membersPath || path.join(__dirname, 'members.local.json');
   const fsModule = deps.fs || fs;
   const adminClient = deps.admin || admin;
-  const bcryptLib = deps.bcrypt || bcrypt;
 
   const [serviceAccount, seedConfig] = await Promise.all([
     readJson(fsModule, serviceAccountPath),
@@ -206,20 +206,6 @@ async function seed(options = {}, deps = {}) {
 
     const memberRef = groupRef.collection('members').doc(member.id);
     await writeMemberDoc(firestore, memberRef, member);
-
-    const memberAuthRef = groupRef.collection('memberAuth').doc(member.id);
-    const pinHash = await bcryptLib.hash(member.pin, 12);
-
-    await memberAuthRef.set(
-      {
-        pinHash,
-        failedAttempts: 0,
-        lockedUntil: null,
-        lastFailedAt: null,
-        lastSuccessfulAt: null,
-      },
-      { merge: false }
-    );
   }
 
   return {

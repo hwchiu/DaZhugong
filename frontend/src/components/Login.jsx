@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { signInWithCustomToken } from 'firebase/auth';
-import { httpsCallable } from 'firebase/functions';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { useGroup } from '../hooks/useGroup.js';
-import { auth, functions } from '../firebase.js';
+import { auth } from '../firebase.js';
 import { useAuthStore } from '../store/authStore.js';
+import { deriveFirebasePassword } from '../auth/credentials.js';
 
 const GROUP_ID = 'main';
 const THROTTLED_ERROR_MESSAGE = '嘗試次數過多，請稍後再試。';
@@ -29,12 +29,8 @@ function sanitizePin(value) {
   return value.replace(/\D/g, '').slice(0, 4);
 }
 
-function isValidCustomToken(value) {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
 function getLoginErrorMessage(error) {
-  return error?.code === 'functions/resource-exhausted' ? THROTTLED_ERROR_MESSAGE : GENERIC_ERROR_MESSAGE;
+  return error?.code === 'auth/too-many-requests' ? THROTTLED_ERROR_MESSAGE : GENERIC_ERROR_MESSAGE;
 }
 
 function getSelectedCardStyle(member) {
@@ -95,26 +91,16 @@ export default function Login() {
     }
 
     const memberToSubmit = selectedMember;
-    const pinToSubmit = pin;
-
     setPendingMember(memberToSubmit);
     setIsLoggingIn(true);
     setErrorMessage('');
 
     try {
-      const loginWithPin = httpsCallable(functions, 'loginWithPin');
-      const result = await loginWithPin({
-        groupId: GROUP_ID,
-        memberId: memberToSubmit.id,
-        pin: pinToSubmit,
-      });
-      const customToken = result?.data?.customToken;
-
-      if (!isValidCustomToken(customToken)) {
-        throw new Error('Missing custom token.');
-      }
-
-      await signInWithCustomToken(auth, customToken);
+      await signInWithEmailAndPassword(
+        auth,
+        memberToSubmit.loginEmail,
+        deriveFirebasePassword(memberToSubmit.authUid, pin),
+      );
     } catch (error) {
       setErrorMessage(getLoginErrorMessage(error));
       setPin('');

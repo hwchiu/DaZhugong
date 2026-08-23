@@ -1,7 +1,6 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import { getFunctions } from 'firebase/functions';
 
 export const REQUIRED_FIREBASE_ENV_FIELDS = [
   'VITE_FIREBASE_API_KEY',
@@ -47,7 +46,6 @@ function initializeFirebaseServices(env = import.meta.env) {
     app,
     auth: getAuth(app),
     db: getFirestore(app),
-    functions: getFunctions(app, 'asia-east1'),
   };
 }
 
@@ -57,14 +55,12 @@ let firebaseInitializationPromise;
 export let firebaseApp;
 export let auth;
 export let db;
-export let functions;
 
 function assignFirebaseServices(services) {
   firebaseServices = services;
   firebaseApp = services.app;
   auth = services.auth;
   db = services.db;
-  functions = services.functions;
 
   return services;
 }

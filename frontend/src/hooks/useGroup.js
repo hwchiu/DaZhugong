@@ -44,6 +44,22 @@ function toGroupDoc(groupSnapshot) {
   };
 }
 
+function withReportTotals(members, reports) {
+  const totals = new Map();
+
+  for (const report of reports) {
+    const targetId = report?.targetId;
+    if (typeof targetId === 'string') {
+      totals.set(targetId, (totals.get(targetId) ?? 0) + 1);
+    }
+  }
+
+  return members.map((member) => ({
+    ...member,
+    totalTokens: totals.get(member.id) ?? 0,
+  }));
+}
+
 export function useGroup(groupId) {
   const subscriptionIdRef = useRef(0);
   const [state, setState] = useState({
@@ -70,8 +86,12 @@ export function useGroup(groupId) {
     let active = true;
     let groupLoaded = false;
     let membersLoaded = false;
+    let reportsLoaded = false;
+    let latestMembers = [];
+    let latestReports = [];
     let unsubscribeGroup = null;
     let unsubscribeMembers = null;
+    let unsubscribeReports = null;
 
     const isCurrent = () => active && subscriptionIdRef.current === nextSubscriptionId;
     const updateLoading = () => {
@@ -81,14 +101,16 @@ export function useGroup(groupId) {
 
       setState((current) => ({
         ...current,
-        loading: !(groupLoaded && membersLoaded),
+        loading: !(groupLoaded && membersLoaded && reportsLoaded),
       }));
     };
     const clearSubscriptions = () => {
       unsubscribeGroup?.();
       unsubscribeMembers?.();
+      unsubscribeReports?.();
       unsubscribeGroup = null;
       unsubscribeMembers = null;
+      unsubscribeReports = null;
     };
     const fail = (error) => {
       if (!isCurrent()) {
@@ -142,11 +164,33 @@ export function useGroup(groupId) {
               return;
             }
 
-            const members = (membersSnapshot?.docs ?? []).map(toMemberDoc).slice().sort(compareMembers);
+            latestMembers = (membersSnapshot?.docs ?? []).map(toMemberDoc).slice().sort(compareMembers);
             membersLoaded = true;
             setState((current) => ({
               ...current,
-              members,
+              members: withReportTotals(latestMembers, latestReports),
+            }));
+            updateLoading();
+          } catch (error) {
+            fail(error);
+          }
+        },
+        (error) => fail(error),
+      );
+
+      unsubscribeReports = onSnapshot(
+        collection(db, 'groups', groupId, 'reports'),
+        async (reportsSnapshot) => {
+          try {
+            if (!isCurrent()) {
+              return;
+            }
+
+            latestReports = (reportsSnapshot?.docs ?? []).map(toMemberDoc);
+            reportsLoaded = true;
+            setState((current) => ({
+              ...current,
+              members: withReportTotals(latestMembers, latestReports),
             }));
             updateLoading();
           } catch (error) {

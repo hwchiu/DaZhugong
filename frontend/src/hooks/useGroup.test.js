@@ -69,10 +69,17 @@ describe('useGroup', () => {
       error: null,
     });
 
-    const [groupListener, membersListener] = firestoreMock.state.subscriptions;
+    const [groupListener, membersListener, reportsListener] = firestoreMock.state.subscriptions;
     await act(async () => {
       groupListener.next(makeSnapshot({ id: 'group-1', data: { name: 'Lunch Crew' } }));
       membersListener.next(makeSnapshot({ docs: originalDocs }));
+      reportsListener.next(makeSnapshot({
+        docs: [
+          makeDoc('report-1', { targetId: 'alpha' }),
+          makeDoc('report-2', { targetId: 'alpha' }),
+          makeDoc('report-3', { targetId: 'zeta' }),
+        ],
+      }));
     });
 
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -80,8 +87,8 @@ describe('useGroup', () => {
     expect(result.current).toMatchObject({
       group: { id: 'group-1', name: 'Lunch Crew' },
       members: [
-        { id: 'alpha', name: 'Alpha' },
-        { id: 'zeta', name: 'Zeta' },
+        { id: 'alpha', name: 'Alpha', totalTokens: 2 },
+        { id: 'zeta', name: 'Zeta', totalTokens: 1 },
       ],
       loading: false,
       error: null,
@@ -89,16 +96,18 @@ describe('useGroup', () => {
     expect(originalDocs.map((doc) => doc.id)).toEqual(['zeta', 'alpha']);
     expect(firestoreMock.doc).toHaveBeenCalledWith(firestoreMock.db, 'groups', 'group-1');
     expect(firestoreMock.collection).toHaveBeenCalledWith(firestoreMock.db, 'groups', 'group-1', 'members');
+    expect(firestoreMock.collection).toHaveBeenCalledWith(firestoreMock.db, 'groups', 'group-1', 'reports');
   });
 
   it('returns a null group when the document does not exist', async () => {
     const { useGroup } = await loadHook();
     const { result } = renderHook(() => useGroup('missing-group'));
 
-    const [groupListener, membersListener] = firestoreMock.state.subscriptions;
+    const [groupListener, membersListener, reportsListener] = firestoreMock.state.subscriptions;
     await act(async () => {
       groupListener.next(makeSnapshot({ id: 'missing-group', exists: false }));
       membersListener.next(makeSnapshot({ docs: [] }));
+      reportsListener.next(makeSnapshot({ docs: [] }));
     });
 
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -137,27 +146,32 @@ describe('useGroup', () => {
 
     const firstGroupListener = firestoreMock.state.subscriptions[0];
     const firstMembersListener = firestoreMock.state.subscriptions[1];
+    const firstReportsListener = firestoreMock.state.subscriptions[2];
 
     rerender({ groupId: 'group-b' });
 
-    const secondGroupListener = firestoreMock.state.subscriptions[2];
-    const secondMembersListener = firestoreMock.state.subscriptions[3];
+    const secondGroupListener = firestoreMock.state.subscriptions[3];
+    const secondMembersListener = firestoreMock.state.subscriptions[4];
+    const secondReportsListener = firestoreMock.state.subscriptions[5];
 
     await act(async () => {
       secondGroupListener.next(makeSnapshot({ id: 'group-b', data: { name: 'Fresh Group' } }));
       secondMembersListener.next(makeSnapshot({ docs: [makeDoc('b', { name: 'Bravo' })] }));
+      secondReportsListener.next(makeSnapshot({ docs: [makeDoc('r-b', { targetId: 'b' })] }));
       firstGroupListener.next(makeSnapshot({ id: 'group-a', data: { name: 'Stale Group' } }));
       firstMembersListener.next(makeSnapshot({ docs: [makeDoc('a', { name: 'Alpha' })] }));
+      firstReportsListener.next(makeSnapshot({ docs: [makeDoc('r-a', { targetId: 'a' })] }));
     });
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     expect(result.current.group).toMatchObject({ id: 'group-b', name: 'Fresh Group' });
-    expect(result.current.members).toEqual([{ id: 'b', name: 'Bravo' }]);
+    expect(result.current.members).toEqual([{ id: 'b', name: 'Bravo', totalTokens: 1 }]);
 
     unmount();
 
     expect(secondGroupListener.unsubscribe).toHaveBeenCalledTimes(1);
     expect(secondMembersListener.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(secondReportsListener.unsubscribe).toHaveBeenCalledTimes(1);
   });
 });

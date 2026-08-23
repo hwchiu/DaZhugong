@@ -2,6 +2,116 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function memberPath(groupId, memberId) {
+      return /databases/$(database)/documents/groups/$(groupId)/members/$(memberId);
+    }
+
+    function tokenPath(groupId, tokenId) {
+      return /databases/$(database)/documents/groups/$(groupId)/tokens/$(tokenId);
+    }
+
+    function reportPath(groupId, tokenId) {
+      return /databases/$(database)/documents/groups/$(groupId)/reports/$(tokenId);
+    }
+
+    function isMember(groupId, memberId) {
+      return request.auth != null
+        && exists(memberPath(groupId, memberId))
+        && get(memberPath(groupId, memberId)).data.authUid == request.auth.uid;
+    }
+
+    function hasExactTokenFields(data) {
+      return data.keys().hasAll([
+          'targetId',
+          'reporterId',
+          'status',
+          'createdAt',
+          'confirmedAt',
+          'resolvedAt'
+        ])
+        && data.keys().hasOnly([
+          'targetId',
+          'reporterId',
+          'status',
+          'createdAt',
+          'confirmedAt',
+          'resolvedAt'
+        ]);
+    }
+
+    function hasExactReportFields(data) {
+      return data.keys().hasAll(['targetId', 'reporterId', 'timestamp'])
+        && data.keys().hasOnly(['targetId', 'reporterId', 'timestamp']);
+    }
+
+    function validTokenCreate(groupId) {
+      return hasExactTokenFields(request.resource.data)
+        && request.resource.data.targetId is string
+        && request.resource.data.reporterId is string
+        && request.resource.data.targetId != request.resource.data.reporterId
+        && exists(memberPath(groupId, request.resource.data.targetId))
+        && isMember(groupId, request.resource.data.reporterId)
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.confirmedAt == null
+        && request.resource.data.resolvedAt == null;
+    }
+
+    function immutableTokenIdentity() {
+      return request.resource.data.targetId == resource.data.targetId
+        && request.resource.data.reporterId == resource.data.reporterId
+        && request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function matchingReportAfter(groupId, tokenId) {
+      return !exists(reportPath(groupId, tokenId))
+        && existsAfter(reportPath(groupId, tokenId))
+        && hasExactReportFields(getAfter(reportPath(groupId, tokenId)).data)
+        && getAfter(reportPath(groupId, tokenId)).data.targetId == resource.data.targetId
+        && getAfter(reportPath(groupId, tokenId)).data.reporterId == resource.data.reporterId
+        && getAfter(reportPath(groupId, tokenId)).data.timestamp == request.time;
+    }
+
+    function validTokenUpdate(groupId, tokenId) {
+      return hasExactTokenFields(request.resource.data)
+        && resource.data.status == 'pending'
+        && isMember(groupId, resource.data.targetId)
+        && immutableTokenIdentity()
+        && (
+          (
+            request.resource.data.status == 'rejected'
+            && request.resource.data.confirmedAt == null
+            && request.resource.data.resolvedAt == request.time
+            && !existsAfter(reportPath(groupId, tokenId))
+          )
+          ||
+          (
+            request.resource.data.status == 'confirmed'
+            && request.resource.data.confirmedAt == request.time
+            && request.resource.data.resolvedAt == request.time
+            && matchingReportAfter(groupId, tokenId)
+          )
+        );
+    }
+
+    function validReportCreate(groupId, tokenId) {
+      return hasExactReportFields(request.resource.data)
+        && request.resource.data.timestamp == request.time
+        && exists(tokenPath(groupId, tokenId))
+        && existsAfter(tokenPath(groupId, tokenId))
+        && get(tokenPath(groupId, tokenId)).data.status == 'pending'
+        && getAfter(tokenPath(groupId, tokenId)).data.status == 'confirmed'
+        && getAfter(tokenPath(groupId, tokenId)).data.targetId
+          == get(tokenPath(groupId, tokenId)).data.targetId
+        && getAfter(tokenPath(groupId, tokenId)).data.reporterId
+          == get(tokenPath(groupId, tokenId)).data.reporterId
+        && getAfter(tokenPath(groupId, tokenId)).data.createdAt
+          == get(tokenPath(groupId, tokenId)).data.createdAt
+        && request.resource.data.targetId == getAfter(tokenPath(groupId, tokenId)).data.targetId
+        && request.resource.data.reporterId == getAfter(tokenPath(groupId, tokenId)).data.reporterId
+        && isMember(groupId, request.resource.data.targetId);
+    }
+
     match /groups/{groupId} {
       allow read: if true;
       allow write: if false;
@@ -17,13 +127,24 @@ service cloud.firestore {
 
       match /tokens/{tokenId} {
         allow read: if true;
-        allow write: if false;
+        allow create: if validTokenCreate(groupId);
+        allow update: if validTokenUpdate(groupId, tokenId);
+        allow delete: if false;
       }
 
-      match /reports/{reportId} {
+      match /reports/{tokenId} {
         allow read: if true;
-        allow write: if false;
+        allow create: if validReportCreate(groupId, tokenId);
+        allow update, delete: if false;
       }
+
+      match /{document=**} {
+        allow read, write: if false;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
