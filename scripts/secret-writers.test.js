@@ -99,7 +99,7 @@ test('rejects malformed Firebase JSON without echoing its input', () => {
 
 test('writes an arbitrary JSON object privately without logging its contents', () => {
   const secretObject = {
-    members: [{ id: 'member1', pin: '9876' }],
+    members: [{ id: 'member1', accessCode: 'Writer!Code9X' }],
   };
   const result = runScript(
     'write-json-secret.js',

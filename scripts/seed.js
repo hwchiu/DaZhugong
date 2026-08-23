@@ -12,18 +12,20 @@ function normalizeMemberText(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function validateMemberConfig(member, index = 0, seen = { ids: new Set(), authUids: new Set(), pins: new Set() }) {
+function validateMemberConfig(member, index = 0, seen = { ids: new Set(), authUids: new Set(), accessCodes: new Set() }) {
   if (!member || typeof member !== 'object' || Array.isArray(member)) {
     throw new Error(`Member ${index + 1} must be an object.`);
   }
+  if (Object.prototype.hasOwnProperty.call(member, 'pin')) {
+    throw new Error(`Member ${index + 1} legacy credential fields are not supported.`);
+  }
 
-  const { id, authUid, name, avatar, color, pin } = member;
+  const { id, authUid, name, avatar, color, accessCode } = member;
   const normalizedId = normalizeMemberText(id);
   const normalizedAuthUid = normalizeMemberText(authUid);
   const normalizedName = normalizeMemberText(name);
   const normalizedAvatar = normalizeMemberText(avatar);
   const normalizedColor = normalizeMemberText(color);
-  const normalizedPin = String(pin);
 
   if (!normalizedId) {
     throw new Error(`Member ${index + 1} id must be a non-empty string.`);
@@ -51,13 +53,33 @@ function validateMemberConfig(member, index = 0, seen = { ids: new Set(), authUi
     throw new Error(`Member ${normalizedId} color must be a non-empty string.`);
   }
 
-  if (!/^\d{4}$/.test(normalizedPin)) {
-    throw new Error(`Member ${normalizedId} pin must be exactly 4 ASCII digits.`);
+  if (typeof accessCode !== 'string') {
+    throw new Error(`Member ${normalizedId} accessCode must be a string.`);
   }
-  if (seen.pins.has(normalizedPin)) {
-    throw new Error(`Member ${normalizedId} pin must be unique.`);
+  if (accessCode === '<SET_UNIQUE_ACCESS_CODE>') {
+    throw new Error(`Member ${normalizedId} accessCode placeholder must be replaced.`);
   }
-  seen.pins.add(normalizedPin);
+  if (accessCode.trim() !== accessCode) {
+    throw new Error(`Member ${normalizedId} accessCode must not contain leading or trailing whitespace.`);
+  }
+
+  const accessCodeLength = Array.from(accessCode).length;
+  const isStrongAccessCode = accessCodeLength >= 12
+    && accessCodeLength <= 64
+    && /[A-Z]/.test(accessCode)
+    && /[a-z]/.test(accessCode)
+    && /[0-9]/.test(accessCode)
+    && /[^A-Za-z0-9\s]/.test(accessCode);
+
+  if (!isStrongAccessCode) {
+    throw new Error(
+      `Member ${normalizedId} accessCode must be 12 to 64 characters with uppercase, lowercase, digit, and symbol.`,
+    );
+  }
+  if (seen.accessCodes.has(accessCode)) {
+    throw new Error(`Member ${normalizedId} accessCode must be unique.`);
+  }
+  seen.accessCodes.add(accessCode);
 
   return {
     id: normalizedId,
@@ -65,7 +87,7 @@ function validateMemberConfig(member, index = 0, seen = { ids: new Set(), authUi
     name: normalizedName,
     avatar: normalizedAvatar,
     color: normalizedColor,
-    pin: normalizedPin,
+    accessCode,
   };
 }
 
@@ -79,7 +101,7 @@ function validateSeedConfig(config) {
     throw new Error('Seed config members must be a non-empty array.');
   }
 
-  const seen = { ids: new Set(), authUids: new Set(), pins: new Set() };
+  const seen = { ids: new Set(), authUids: new Set(), accessCodes: new Set() };
   const normalizedMembers = members.map((member, index) => validateMemberConfig(member, index, seen));
 
   return {
@@ -162,7 +184,7 @@ async function ensureAuthUser(auth, member) {
   const credentials = {
     email: deriveLoginEmail(member.authUid),
     displayName: member.name,
-    password: deriveFirebasePassword(member.authUid, member.pin),
+    password: deriveFirebasePassword(member.authUid, member.accessCode),
     disabled: false,
   };
 

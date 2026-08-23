@@ -38,7 +38,7 @@ beforeEach(() => {
 });
 
 describe('Settings page', () => {
-  it('shows signed-in identity, lunch time, report totals, active ranking, and inactive history without PIN data', () => {
+  it('shows signed-in identity, lunch time, report totals, active ranking, and inactive history without private credentials', () => {
     render(<Settings />);
 
     expect(screen.getByText('目前登入：自己')).toBeTruthy();
@@ -51,7 +51,7 @@ describe('Settings page', () => {
 
     const inactive = screen.getByRole('list', { name: '歷史成員' });
     expect(within(inactive).getByText('小美')).toBeTruthy();
-    expect(screen.queryByText(/PIN|預設密碼/)).toBe(null);
+    expect(screen.queryByText(/通行碼|預設密碼/)).toBe(null);
   });
 
   it('disables logout while pending and restores the action after a failure', async () => {

@@ -124,7 +124,7 @@ describe('Login', () => {
     expect(alert.textContent).not.toContain('internal secret');
   });
 
-  it('renders member cards with token counts and filters PIN input to four digits', async () => {
+  it('renders an accessible private access-code input without digit filtering', async () => {
     const user = userEvent.setup();
     renderLogin();
 
@@ -133,15 +133,30 @@ describe('Login', () => {
 
     await user.click(screen.getByRole('button', { name: '選擇成員 你' }));
 
-    const pinInput = screen.getByLabelText('PIN 碼');
+    const accessCodeInput = screen.getByLabelText('通行碼');
     const submitButton = screen.getByRole('button', { name: '登入' });
 
     expect(submitButton.disabled).toBe(true);
+    expect(accessCodeInput.type).toBe('password');
+    expect(accessCodeInput.autocomplete).toBe('current-password');
+    expect(accessCodeInput.minLength).toBe(12);
+    expect(accessCodeInput.maxLength).toBe(64);
 
-    await user.type(pinInput, '12ab345');
+    await user.type(accessCodeInput, 'River!Stone9X');
 
-    expect(pinInput.value).toBe('1234');
+    expect(accessCodeInput.value).toBe('River!Stone9X');
     expect(submitButton.disabled).toBe(false);
+  });
+
+  it('limits the access code to 64 characters', async () => {
+    const user = userEvent.setup();
+    renderLogin();
+
+    await user.click(screen.getByRole('button', { name: '選擇成員 你' }));
+    const accessCodeInput = screen.getByLabelText('通行碼');
+    await user.type(accessCodeInput, `Aa1!${'x'.repeat(61)}`);
+
+    expect(accessCodeInput.value).toHaveLength(64);
   });
 
   it('hides inactive members from login selection', () => {
@@ -168,7 +183,7 @@ describe('Login', () => {
     expect(screen.queryByRole('button', { name: '選擇成員 Inactive Member' })).toBe(null);
   });
 
-  it('locks member selection and PIN input while the login request is pending', async () => {
+  it('locks interaction and clears the access code while login is pending', async () => {
     const user = userEvent.setup();
     const deferred = createDeferred();
     firebaseState.signInWithEmailAndPassword.mockReturnValue(deferred.promise);
@@ -176,28 +191,28 @@ describe('Login', () => {
     renderLogin();
 
     await user.click(screen.getByRole('button', { name: '選擇成員 你' }));
-    const pinInput = screen.getByLabelText('PIN 碼');
+    const accessCodeInput = screen.getByLabelText('通行碼');
 
-    await user.type(pinInput, '2468');
+    await user.type(accessCodeInput, 'River!Stone9X');
     await user.click(screen.getByRole('button', { name: '登入' }));
 
     expect(screen.getByRole('status').textContent).toContain('你');
     expect(screen.getByRole('button', { name: '選擇成員 你' }).disabled).toBe(true);
     expect(screen.getByRole('button', { name: '選擇成員 Kevin' }).disabled).toBe(true);
-    expect(screen.getByLabelText('PIN 碼').disabled).toBe(true);
+    expect(screen.getByLabelText('通行碼').disabled).toBe(true);
 
     await user.click(screen.getByRole('button', { name: '選擇成員 Kevin' }));
 
     expect(screen.getByRole('button', { name: '選擇成員 你' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('button', { name: '選擇成員 Kevin' }).getAttribute('aria-pressed')).toBe('false');
-    expect(screen.getByLabelText('PIN 碼').value).toBe('2468');
+    expect(screen.getByLabelText('通行碼').value).toBe('');
 
     deferred.resolve({ user: { uid: 'dazhugong_main_member1' } });
 
     await waitFor(() => expect(firebaseState.signInWithEmailAndPassword).toHaveBeenCalledTimes(1));
   });
 
-  it('clears the PIN and any visible error when the selected member changes', async () => {
+  it('clears the access code and any visible error when the selected member changes', async () => {
     const user = userEvent.setup();
     firebaseState.signInWithEmailAndPassword.mockRejectedValue({
       code: 'auth/invalid-credential',
@@ -207,25 +222,25 @@ describe('Login', () => {
     renderLogin();
 
     await user.click(screen.getByRole('button', { name: '選擇成員 你' }));
-    const pinInput = screen.getByLabelText('PIN 碼');
+    const accessCodeInput = screen.getByLabelText('通行碼');
 
-    await user.type(pinInput, '1234');
+    await user.type(accessCodeInput, 'River!Stone9X');
     await user.click(screen.getByRole('button', { name: '登入' }));
 
     expect(screen.getByRole('alert').textContent).toContain('登入失敗');
 
-    await user.type(pinInput, '5678');
+    await user.type(accessCodeInput, 'Maple#Cloud8Q');
     await user.click(screen.getByRole('button', { name: '選擇成員 Kevin' }));
 
-    expect(screen.getByLabelText('PIN 碼').value).toBe('');
+    expect(screen.getByLabelText('通行碼').value).toBe('');
     expect(screen.queryByRole('alert')).toBe(null);
   });
 
-  it('shows the signed-out auth error as an alert and clears it independently from PIN errors', async () => {
+  it('shows the signed-out auth error independently from access-code errors', async () => {
     const user = userEvent.setup();
     firebaseState.signInWithEmailAndPassword.mockRejectedValue({
       code: 'auth/invalid-credential',
-      message: 'pinHash comparison failed for member-1',
+      message: 'credential comparison failed for member-1',
     });
 
     renderLogin({ authError: 'Unable to verify your account access right now.' });
@@ -237,7 +252,7 @@ describe('Login', () => {
     expect(authStoreState.clearAuthError).toHaveBeenCalledTimes(1);
     expect(screen.queryByText('Unable to verify your account access right now.')).toBe(null);
 
-    await user.type(screen.getByLabelText('PIN 碼'), '9999');
+    await user.type(screen.getByLabelText('通行碼'), 'Wrong!Access9X');
     await user.click(screen.getByRole('button', { name: '登入' }));
 
     const alerts = await screen.findAllByRole('alert');
@@ -255,14 +270,15 @@ describe('Login', () => {
     renderLogin();
 
     await user.click(screen.getByRole('button', { name: '選擇成員 Kevin' }));
-    await user.type(screen.getByLabelText('PIN 碼'), '2468{Enter}');
+    await user.type(screen.getByLabelText('通行碼'), 'River!Stone9X{Enter}');
 
     await waitFor(() => expect(firebaseState.signInWithEmailAndPassword).toHaveBeenCalledTimes(1));
     expect(firebaseState.signInWithEmailAndPassword).toHaveBeenCalledWith(
       firebaseState.auth,
       'dazhugong_main_member2@dazhugong.invalid',
-      'dazhugong.firebase-auth.v1:dazhugong_main_member2:2468',
+      'DzG2!TMlgZ-QM-MDZR5ab7eGpmhrOToxcP4EPFVpetrxS84E',
     );
+    expect(screen.getByLabelText('通行碼').value).toBe('');
     expect(screen.queryByRole('alert')).toBe(null);
   });
 
@@ -271,7 +287,7 @@ describe('Login', () => {
     renderLogin();
 
     await user.click(screen.getByRole('button', { name: '選擇成員 Kevin' }));
-    await user.type(screen.getByLabelText('PIN 碼'), '2468');
+    await user.type(screen.getByLabelText('通行碼'), 'River!Stone9X');
 
     const submitButton = screen.getByRole('button', { name: '登入' });
 
@@ -280,22 +296,24 @@ describe('Login', () => {
     expect(submitButton.getAttribute('style')).toBe(null);
   });
 
-  it('shows a safe generic error for a wrong PIN without leaking backend details', async () => {
+  it('shows a safe generic error for an invalid credential without leaking backend details', async () => {
     const user = userEvent.setup();
     firebaseState.signInWithEmailAndPassword.mockRejectedValue({
       code: 'auth/wrong-password',
-      message: 'pinHash comparison failed for member-1',
+      message: 'credential comparison failed for member-1',
     });
 
     renderLogin();
 
     await user.click(screen.getByRole('button', { name: '選擇成員 你' }));
-    await user.type(screen.getByLabelText('PIN 碼'), '9999');
+    await user.type(screen.getByLabelText('通行碼'), 'Wrong!Access9X');
     await user.click(screen.getByRole('button', { name: '登入' }));
 
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('登入失敗');
-    expect(alert.textContent).not.toContain('pinHash');
+    expect(alert.textContent).toContain('通行碼');
+    expect(alert.textContent).not.toContain('credential comparison');
+    expect(screen.getByLabelText('通行碼').value).toBe('');
     expect(firebaseState.signInWithEmailAndPassword).toHaveBeenCalledTimes(1);
   });
 
@@ -309,7 +327,7 @@ describe('Login', () => {
     renderLogin();
 
     await user.click(screen.getByRole('button', { name: '選擇成員 你' }));
-    await user.type(screen.getByLabelText('PIN 碼'), '9999');
+    await user.type(screen.getByLabelText('通行碼'), 'Wrong!Access9X');
     await user.click(screen.getByRole('button', { name: '登入' }));
 
     expect((await screen.findByRole('alert')).textContent).toContain('嘗試次數過多');
@@ -323,7 +341,7 @@ describe('Login', () => {
     renderLogin();
 
     await user.click(screen.getByRole('button', { name: '選擇成員 Kevin' }));
-    await user.type(screen.getByLabelText('PIN 碼'), '2468');
+    await user.type(screen.getByLabelText('通行碼'), 'River!Stone9X');
 
     const submitButton = screen.getByRole('button', { name: '登入' });
     await user.click(submitButton);

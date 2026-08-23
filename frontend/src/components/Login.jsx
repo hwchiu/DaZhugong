@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { useGroup } from '../hooks/useGroup.js';
 import { auth } from '../firebase.js';
@@ -6,8 +6,10 @@ import { useAuthStore } from '../store/authStore.js';
 import { deriveFirebasePassword } from '../auth/credentials.js';
 
 const GROUP_ID = 'main';
+const MIN_ACCESS_CODE_LENGTH = 12;
+const MAX_ACCESS_CODE_LENGTH = 64;
 const THROTTLED_ERROR_MESSAGE = '嘗試次數過多，請稍後再試。';
-const GENERIC_ERROR_MESSAGE = '登入失敗，請確認 PIN 後再試，或稍後重試。';
+const GENERIC_ERROR_MESSAGE = '登入失敗，請確認通行碼後再試，或稍後重試。';
 const MEMBERS_ERROR_MESSAGE = '成員資料暫時載入失敗，請重新整理頁面後再試。';
 const MEMBER_EMOJIS = {
   pig: '🐷',
@@ -25,10 +27,6 @@ function getTokenCountLabel(totalTokens) {
   return `${Number.isFinite(totalTokens) ? totalTokens : 0} 枚代幣`;
 }
 
-function sanitizePin(value) {
-  return value.replace(/\D/g, '').slice(0, 4);
-}
-
 function getLoginErrorMessage(error) {
   return error?.code === 'auth/too-many-requests' ? THROTTLED_ERROR_MESSAGE : GENERIC_ERROR_MESSAGE;
 }
@@ -44,9 +42,10 @@ export default function Login() {
   const { members, loading: membersLoading, error: membersError } = useGroup(GROUP_ID);
   const authError = useAuthStore((state) => state.authError);
   const clearAuthError = useAuthStore((state) => state.clearAuthError);
+  const accessCodeInputRef = useRef(null);
   const [selectedMember, setSelectedMember] = useState(null);
   const [pendingMember, setPendingMember] = useState(null);
-  const [pin, setPin] = useState('');
+  const [accessCodeLength, setAccessCodeLength] = useState(0);
   const [errorMessage, setErrorMessage] = useState('');
   const [hasDismissedAuthError, setHasDismissedAuthError] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -57,7 +56,12 @@ export default function Login() {
   );
   const isInteractionLocked = membersLoading || membersError || isLoggingIn;
   const visibleSelectedMemberId = pendingMember?.id ?? (selectedMemberIsActive ? selectedMember.id : undefined);
-  const canSubmit = selectedMemberIsActive && pin.length === 4 && !membersLoading && !membersError && !isLoggingIn;
+  const canSubmit = selectedMemberIsActive
+    && accessCodeLength >= MIN_ACCESS_CODE_LENGTH
+    && accessCodeLength <= MAX_ACCESS_CODE_LENGTH
+    && !membersLoading
+    && !membersError
+    && !isLoggingIn;
   const visibleAuthError = hasDismissedAuthError ? '' : authError;
 
   useEffect(() => {
@@ -72,18 +76,21 @@ export default function Login() {
     setHasDismissedAuthError(true);
     clearAuthError?.();
     setSelectedMember(member);
-    setPin('');
+    if (accessCodeInputRef.current) {
+      accessCodeInputRef.current.value = '';
+    }
+    setAccessCodeLength(0);
     setErrorMessage('');
   }
 
-  function handlePinChange(event) {
+  function handleAccessCodeChange(event) {
     if (isInteractionLocked) {
       return;
     }
 
     setHasDismissedAuthError(true);
     clearAuthError?.();
-    setPin(sanitizePin(event.target.value));
+    setAccessCodeLength(event.target.value.length);
     setErrorMessage('');
   }
 
@@ -95,20 +102,32 @@ export default function Login() {
     }
 
     const memberToSubmit = selectedMember;
+    let accessCodeToSubmit = accessCodeInputRef.current?.value ?? '';
+    let firebasePassword = '';
+    if (accessCodeInputRef.current) {
+      accessCodeInputRef.current.value = '';
+    }
     setPendingMember(memberToSubmit);
     setIsLoggingIn(true);
+    setAccessCodeLength(0);
     setErrorMessage('');
 
     try {
+      firebasePassword = await deriveFirebasePassword(
+        memberToSubmit.authUid,
+        accessCodeToSubmit,
+      );
+      accessCodeToSubmit = '';
       await signInWithEmailAndPassword(
         auth,
         memberToSubmit.loginEmail,
-        deriveFirebasePassword(memberToSubmit.authUid, pin),
+        firebasePassword,
       );
     } catch (error) {
       setErrorMessage(getLoginErrorMessage(error));
-      setPin('');
     } finally {
+      accessCodeToSubmit = '';
+      firebasePassword = '';
       setPendingMember(null);
       setIsLoggingIn(false);
     }
@@ -123,7 +142,7 @@ export default function Login() {
           </div>
           <p className="mt-4 text-xs font-semibold uppercase tracking-[0.35em] text-rose-400">DaZhugong</p>
           <h1 className="mt-2 text-3xl font-bold text-rose-500">大豬公</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-500">選擇成員並輸入 4 位 PIN，即可進入午餐禁聊公事罰金箱。</p>
+          <p className="mt-2 text-sm leading-6 text-slate-500">選擇成員並輸入私人通行碼，即可進入午餐禁聊公事罰金箱。</p>
         </header>
 
         <div className="mt-6 rounded-3xl bg-rose-50/70 p-4">
@@ -185,27 +204,27 @@ export default function Login() {
 
         <form className="mt-5 space-y-4" onSubmit={handleSubmit}>
           <div>
-            <label htmlFor="login-pin" className="block text-sm font-medium text-slate-700">
-              PIN 碼
+            <label htmlFor="login-access-code" className="block text-sm font-medium text-slate-700">
+              通行碼
             </label>
             <input
-              id="login-pin"
+              id="login-access-code"
+              ref={accessCodeInputRef}
               type="password"
-              inputMode="numeric"
               autoComplete="current-password"
-              maxLength={4}
-              placeholder={selectedMemberIsActive ? '請輸入 4 位 PIN' : '請先選擇成員'}
-              value={pin}
-              onChange={handlePinChange}
+              minLength={MIN_ACCESS_CODE_LENGTH}
+              maxLength={MAX_ACCESS_CODE_LENGTH}
+              placeholder={selectedMemberIsActive ? '請輸入通行碼' : '請先選擇成員'}
+              onChange={handleAccessCodeChange}
               disabled={!selectedMemberIsActive || isInteractionLocked}
-              aria-label="PIN 碼"
-              className="mt-2 w-full rounded-2xl border border-rose-200 bg-white px-4 py-3 text-center text-2xl tracking-[0.6em] text-slate-700 outline-none transition placeholder:tracking-normal placeholder:text-sm placeholder:text-slate-400 focus:border-rose-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+              aria-label="通行碼"
+              className="mt-2 w-full rounded-2xl border border-rose-200 bg-white px-4 py-3 text-center text-xl tracking-[0.2em] text-slate-700 outline-none transition placeholder:tracking-normal placeholder:text-sm placeholder:text-slate-400 focus:border-rose-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
             />
           </div>
 
           {isLoggingIn ? (
             <p role="status" aria-live="polite" className="text-sm text-rose-500">
-              {pendingMember ? `登入中，使用 ${pendingMember.name} 的 PIN 驗證中…` : '登入中…'}
+              {pendingMember ? `登入中，使用 ${pendingMember.name} 的通行碼驗證中…` : '登入中…'}
             </p>
           ) : null}
 

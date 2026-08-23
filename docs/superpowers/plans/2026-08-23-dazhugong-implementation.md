@@ -4,7 +4,7 @@
 
 **Goal:** Migrate DaZhugong v1 from Cloud Functions to Firebase Authentication email/password plus direct, Security-Rules-protected Firestore writes so it can deploy on Firebase Spark.
 
-**Architecture:** The seed maps each stable member `authUid` and private PIN to deterministic Firebase credentials. The frontend signs in directly with Firebase Auth and writes token transitions through a focused service; Firestore Rules bind every write to `request.auth.uid` and require atomic confirmation/report creation. Confirmed reports, not `members.totalTokens`, are the source of truth.
+**Architecture:** The seed maps each stable member `authUid` and strong private `accessCode` to a deterministic opaque Firebase credential. The frontend signs in directly with Firebase Auth and writes token transitions through a focused service; Firestore Rules bind every write to `request.auth.uid` and require atomic confirmation/report creation. Confirmed reports, not `members.totalTokens`, are the source of truth.
 
 **Tech Stack:** Node.js, Firebase Admin SDK, React 18, Vite, Firebase Auth, Cloud Firestore, Firestore Security Rules v2, Vitest, Node test runner, Firebase Emulator Suite.
 
@@ -25,9 +25,9 @@
 ## Task 1: Credential and seed migration
 
 - [x] Add identical fixed-vector tests in root and frontend.
-- [x] Implement `deriveLoginEmail(authUid)` and `deriveFirebasePassword(authUid, pin)` with namespace `dazhugong.firebase-auth.v1`.
+- [x] Implement `deriveLoginEmail(authUid)` and `deriveFirebasePassword(authUid, accessCode)` with namespaced SHA-256 derivation.
 - [x] Test missing-user create and existing-user update behavior.
-- [x] Add `loginEmail` to public member documents and assert no PIN/hash/password leakage.
+- [x] Add `loginEmail` to public member documents and assert no access-code/hash/password leakage.
 - [x] Preserve preflight and transaction-time `authUid` immutability checks.
 - [x] Stop writing `memberAuth` and stop creating new `totalTokens` fields.
 - [x] Remove the unused bcrypt dependency.
@@ -46,8 +46,8 @@ Expected: root derivation, seed, and rules contract tests pass.
 - [x] Replace callable/custom-token login with `signInWithEmailAndPassword`.
 - [x] Derive the password only at the sign-in call boundary.
 - [x] Map `auth/too-many-requests` to the lockout message.
-- [x] Map invalid credential/wrong password and all other failures to the generic PIN error.
-- [x] Keep member/PIN interaction locked while sign-in is pending.
+- [x] Map invalid credential/wrong password and all other failures to the generic access-code error.
+- [x] Keep member/access-code interaction locked while sign-in is pending.
 
 Validation:
 
@@ -107,7 +107,7 @@ The Emulator command requires Java 21+. Java 8 is an acknowledged local blocker;
 
 - [x] Delete tracked `functions/`.
 - [x] Remove Functions source/runtime/emulator configuration.
-- [x] Document Spark-only v1 and the trusted-small-group PIN tradeoff.
+- [x] Document why a four-digit client-derived PIN is unsafe in Spark/no-server production.
 - [x] Remove Functions from all CI/deployment instructions.
 - [x] Specify only `FIREBASE_CONFIG` and `FIREBASE_SERVICE_ACCOUNT_DAZHUGONG_4F185`.
 - [x] Recommend Firebase Hosting Action or Google Auth, not `firebase login:ci`.
@@ -135,6 +135,27 @@ npm run test:rules:emulator
 ```
 
 The Emulator attempt remains expected to block locally on Java 8 until Java 21+ is installed.
+
+## Task 8: Strong private member access codes
+
+- [x] Rename the private config field and UI concept from `pin` to `accessCode` / 「通行碼」 without a legacy fallback.
+- [x] Add seed tests first for string-only values, 12–64 Unicode code points, uppercase/lowercase/digit/symbol requirements, exact uniqueness, whitespace rejection, and invalid placeholders.
+- [x] Hash namespaced credential material with Node crypto and Web Crypto, and lock both implementations to the same fixed vectors.
+- [x] Keep the Login input as `type="password"` with `autocomplete="current-password"`, remove numeric filtering, cap at 64 characters, and preserve member-first selection.
+- [x] Keep the raw code out of React state, clear the password input before asynchronous sign-in, and clear local credential variables on every exit path.
+- [x] Keep Firebase invalid-credential details behind one generic 「通行碼」 error; retain the separate throttling message.
+- [x] Update `MEMBERS_CONFIG`, example JSON, deployment workflow documentation, design rationale, and security notes without committing a real access code.
+
+Validation:
+
+```bash
+npm test
+npm test --prefix frontend
+npm run build --prefix frontend
+git grep -nE 'PIN 碼|pinHash|\.pin\b|"pin"' -- scripts frontend/src
+```
+
+Expected: root/frontend tests and frontend build pass; the final grep finds only the intentional regression test proving the removed legacy field is rejected.
 
 Final validation:
 

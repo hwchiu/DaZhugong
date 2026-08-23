@@ -46,7 +46,7 @@ jobs:
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_DAZHUGONG_4F185 }}
 
-      - name: Write private seed configuration
+      - name: Write private member access-code configuration
         env:
           SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_DAZHUGONG_4F185 }}
           MEMBERS_CONFIG: ${{ secrets.MEMBERS_CONFIG }}

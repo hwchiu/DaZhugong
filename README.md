@@ -57,8 +57,8 @@ All six fields are required. The deploy workflow validates this JSON and writes
 ### `MEMBERS_CONFIG`
 
 Private member configuration matching `scripts/members.example.json`. Copy the
-whole object into the secret, replace every placeholder with a unique four-digit
-PIN, and keep each `id` and `authUid` stable:
+whole object into the secret, replace every placeholder with a unique private
+access code, and keep each `id` and `authUid` stable:
 
 ```json
 {
@@ -70,13 +70,29 @@ PIN, and keep each `id` and `authUid` stable:
       "name": "<display-name>",
       "avatar": "<avatar-name>",
       "color": "<hex-color>",
-      "pin": "<unique-four-digit-pin>"
+      "accessCode": "<SET_UNIQUE_ACCESS_CODE>"
     }
   ]
 }
 ```
 
-Never commit this JSON or disclose member PINs.
+Each `accessCode` must:
+
+- contain 12–64 characters;
+- contain at least one uppercase letter, lowercase letter, digit, and symbol;
+- be unique across all members;
+- have no leading or trailing whitespace.
+
+The placeholder is intentionally invalid. Keep access codes only in the
+protected `MEMBERS_CONFIG` secret and each member's password manager. Never
+commit, log, paste into an issue, or disclose this JSON.
+
+The browser hashes the selected member UID and access code into an opaque
+Firebase password immediately before sign-in, then clears the access-code
+input. A four-digit client-derived PIN is unsafe because it has only 10,000
+possibilities and can be guessed without a paid/server backend enforcing a
+dedicated rate limit. Strong private access codes preserve the simple member
+selection experience while keeping the Spark/no-server deployment viable.
 
 ### Temporary `FIREBASE_TOKEN` fallback
 
@@ -98,6 +114,9 @@ After Email/Password authentication and the required secrets are configured:
 The workflow validates and writes both private JSON files with mode `0600`, runs
 `npm run seed`, and removes the files even when a step fails. Removing a member
 from `MEMBERS_CONFIG` deactivates that member according to the seed logic.
+Changing an `accessCode` rotates that member's Firebase password on the next
+seed run. Share the new access code through a private channel; do not include it
+in workflow logs or repository files.
 
 ## Deploy
 

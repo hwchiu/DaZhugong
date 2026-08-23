@@ -14,25 +14,28 @@
 
 v1 **不使用 Cloud Functions，也不使用 App Check**。Cloud Functions 部署需要 Blaze billing，不符合目前限制；App Check 留待未來強化。
 
-## PIN 登入的取捨
+## 私人通行碼登入
 
-UI 仍讓使用者選擇成員並輸入唯一的私有 4 位 PIN，但底層映射為 Firebase Email/Password：
+UI 讓使用者先選擇成員，再輸入唯一的私人通行碼，底層映射為 Firebase Email/Password：
 
 - Email：`${authUid}@dazhugong.invalid`
-- Password：`dazhugong.firebase-auth.v1:${authUid}:${pin}`
+- Password：`DzG2!` 加上 SHA-256 digest 的 base64url 編碼
+- Digest input：`JSON.stringify(["dazhugong.firebase-auth.v2", authUid, accessCode])` 的 UTF-8 bytes
 
-前端與 seed 各有純函式 `deriveFirebasePassword(authUid, pin)`，並以相同固定向量測試確保演算法一致。衍生密碼只在登入呼叫當下存在，不寫入 local storage、Firestore、log 或公開文件。
+前端使用 Web Crypto、seed 使用 Node crypto 實作 `deriveFirebasePassword(authUid, accessCode)`，並以相同固定向量測試確保演算法一致。輸出是固定長度、不含原始 UID 或通行碼的強 opaque Firebase password。前端不把原始通行碼存入 React state；送出時立即清空 password input，完成衍生後清除區域通行碼變數，並在 sign-in 結束時清除衍生密碼變數。通行碼、衍生密碼都不得寫入 local storage、Firestore、log 或公開文件。
 
-這個方案依賴 Firebase Authentication 的登入節流；4 位 PIN 的搜尋空間有限，因此只適合可信任的小型群組。若未來需要伺服器端 PIN 節流、App Check、MFA 或更強的登入方式，可選擇升級 Blaze 並遷移到 Functions/更強認證。
+四位數、由客戶端直接衍生的 PIN 只有 10,000 種可能，沒有付費/server backend 提供專用 rate limit 時不適合 production。Spark/no-server v1 因此要求每位成員使用 12–64 字元、至少包含一個大寫字母、小寫字母、數字與符號的唯一私人通行碼。未來若需要 MFA、App Check 或 server-side credential verification，可升級付費方案並遷移認證架構。
 
 ## Seed 與身分
 
-`scripts/members.local.json` 是未提交的唯一私有 4 位 PIN 來源。每位成員必須有唯一 `id`、穩定且唯一的 `authUid`、唯一 PIN，以及顯示欄位。
+`scripts/members.local.json` 是未提交的唯一私人通行碼來源。設定欄位只能是 `accessCode`，不接受舊 `pin` 欄位。每位成員必須有唯一 `id`、穩定且唯一的 `authUid`、唯一通行碼，以及顯示欄位。
+
+`accessCode` 的正規化規則是「不正規化」：必須是 string，原字串直接用於驗證、唯一性比較及衍生；leading/trailing whitespace 會被拒絕而不是 trim。`<SET_UNIQUE_ACCESS_CODE>` 永遠驗證失敗。長度以 Unicode code points 計算，需為 12–64；複雜度至少包含 ASCII uppercase、lowercase、digit 與非英數、非空白 symbol。
 
 Seed 流程：
 
 1. 在任何寫入前列出所有既有 member 文件，確認仍在設定中的 member `authUid` 不變，並一次決定需停用的成員。
-2. 由穩定 `authUid` 衍生 synthetic email，由 `authUid` 與 PIN 衍生 Firebase password。
+2. 由穩定 `authUid` 衍生 synthetic email，由 `authUid` 與私人通行碼衍生 Firebase password。
 3. 設定中的成員寫入 `active: true`；Auth user 不存在時建立，存在時以 `disabled: false` 重新啟用並更新 email、display name 與 password。
 4. 既有但已從 `members.local` 移除的 member 文件只 merge `active: false`，保留姓名、歷史欄位、reports 與 tokens；再依該文件既有 `authUid` 停用 Firebase Auth。
 5. 停用前以 transaction 重讀 member 並確認 `authUid` 未在 preflight 後改變。任何目前設定中的 `authUid` 都列入保護集合，即使舊資料重複引用也不得被停用。
@@ -45,7 +48,7 @@ Seed 流程：
 authUid, loginEmail, name, avatar, color, active
 ```
 
-不得包含 PIN、hash 或 password。舊 `totalTokens` 欄位可保留，但不再是權威資料。
+不得包含 `accessCode`、hash 或 password。舊 `totalTokens` 欄位可保留，但不再是權威資料。
 
 ## Firestore 資料模型
 

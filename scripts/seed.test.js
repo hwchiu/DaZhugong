@@ -10,12 +10,20 @@ const {
 } = require('./seed');
 const example = require('./members.example.json');
 
-function withPins(config, pins) {
+const VALID_ACCESS_CODES = [
+  'River!Stone9X',
+  'Maple#Cloud8Q',
+  'Amber$Field7Z',
+  'Cedar%Trail6M',
+  'Ocean&Bridge5K',
+];
+
+function withAccessCodes(config, accessCodes = VALID_ACCESS_CODES) {
   return {
     ...config,
     members: config.members.map((member, index) => ({
       ...member,
-      pin: pins[index],
+      accessCode: accessCodes[index],
     })),
   };
 }
@@ -238,8 +246,8 @@ async function runSeedWithHarness(config, harness) {
   });
 }
 
-test('accepts the five-member example after replacing placeholder pins', () => {
-  const config = withPins(example, ['1001', '1002', '1003', '1004', '1005']);
+test('accepts the five-member example after replacing placeholder access codes', () => {
+  const config = withAccessCodes(example);
 
   const result = validateSeedConfig(config);
 
@@ -282,14 +290,14 @@ test('builds the main group payload with lunch metadata and preserves extras', (
   });
 });
 
-test('public member payload contains login identity and no PIN-derived secret', () => {
+test('public member payload contains login identity and no private credential', () => {
   const member = {
     id: 'member1',
     authUid: 'dazhugong_main_member1',
     name: '你',
     avatar: 'pig',
     color: '#FF6B8A',
-    pin: '1001',
+    accessCode: VALID_ACCESS_CODES[0],
   };
 
   const payload = buildMemberPayload(member);
@@ -302,8 +310,7 @@ test('public member payload contains login identity and no PIN-derived secret', 
     color: '#FF6B8A',
     active: true,
   });
-  assert.equal('pin' in payload, false);
-  assert.equal('pinHash' in payload, false);
+  assert.equal('accessCode' in payload, false);
   assert.equal('password' in payload, false);
 });
 
@@ -323,7 +330,7 @@ test('creates a missing Auth user with deterministic email and password', async 
   await ensureAuthUser(auth, {
     authUid: 'dazhugong_main_member1',
     name: '你',
-    pin: '1001',
+    accessCode: VALID_ACCESS_CODES[0],
   });
 
   assert.deepEqual(calls[1], {
@@ -332,7 +339,7 @@ test('creates a missing Auth user with deterministic email and password', async 
       uid: 'dazhugong_main_member1',
       email: 'dazhugong_main_member1@dazhugong.invalid',
       displayName: '你',
-      password: 'dazhugong.firebase-auth.v1:dazhugong_main_member1:1001',
+      password: 'DzG2!jmaxj7oMt03P8RHcOaVaq84KcTp4VTiqYDc3rp10rRM',
       disabled: false,
     },
   });
@@ -358,7 +365,7 @@ test('updates an existing Auth user email, display name, and password', async ()
   await ensureAuthUser(auth, {
     authUid: 'dazhugong_main_member1',
     name: '你',
-    pin: '1001',
+    accessCode: VALID_ACCESS_CODES[0],
   });
 
   assert.deepEqual(calls[1], {
@@ -367,14 +374,14 @@ test('updates an existing Auth user email, display name, and password', async ()
     data: {
       email: 'dazhugong_main_member1@dazhugong.invalid',
       displayName: '你',
-      password: 'dazhugong.firebase-auth.v1:dazhugong_main_member1:1001',
+      password: 'DzG2!jmaxj7oMt03P8RHcOaVaq84KcTp4VTiqYDc3rp10rRM',
       disabled: false,
     },
   });
 });
 
 test('normalizes member fields before returning them', () => {
-  const config = withPins(example, ['1001', '1002', '1003', '1004', '1005']);
+  const config = withAccessCodes(example);
   config.members[0] = {
     ...config.members[0],
     id: ' member1 ',
@@ -382,7 +389,7 @@ test('normalizes member fields before returning them', () => {
     name: ' 你 ',
     avatar: ' pig ',
     color: ' #FF6B8A ',
-    pin: '1001',
+    accessCode: VALID_ACCESS_CODES[0],
   };
 
   const result = validateSeedConfig(config);
@@ -393,63 +400,104 @@ test('normalizes member fields before returning them', () => {
     name: '你',
     avatar: 'pig',
     color: '#FF6B8A',
-    pin: '1001',
+    accessCode: VALID_ACCESS_CODES[0],
   });
 });
 
-test('rejects invalid pin format', () => {
-  const config = withPins(example, ['1001', '1002', '1003', '1004', '12a4']);
+for (const [label, accessCode] of [
+  ['shorter than 12 characters', 'Short!Code9'],
+  ['longer than 64 characters', `Aa1!${'x'.repeat(61)}`],
+  ['without an uppercase letter', 'lower!case123'],
+  ['without a lowercase letter', 'UPPER!CASE123'],
+  ['without a digit', 'Missing!DigitX'],
+  ['without a symbol', 'MissingSymbol9X'],
+]) {
+  test(`rejects an access code ${label}`, () => {
+    const config = withAccessCodes(example);
+    config.members[4].accessCode = accessCode;
 
-  const message = messageFor(() => validateSeedConfig(config));
+    const message = messageFor(() => validateSeedConfig(config));
 
-  assert.match(message, /pin.*4 ascii digits/i);
-  assert.doesNotMatch(message, /12a4/);
+    assert.match(message, /accessCode.*12.*64.*uppercase.*lowercase.*digit.*symbol/i);
+    assert.doesNotMatch(message, new RegExp(accessCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  });
+}
+
+test('rejects leading or trailing whitespace instead of trimming an access code', () => {
+  for (const accessCode of [` ${VALID_ACCESS_CODES[4]}`, `${VALID_ACCESS_CODES[4]} `]) {
+    const config = withAccessCodes(example);
+    config.members[4].accessCode = accessCode;
+
+    const message = messageFor(() => validateSeedConfig(config));
+
+    assert.match(message, /accessCode.*leading or trailing whitespace/i);
+    assert.doesNotMatch(message, new RegExp(VALID_ACCESS_CODES[4].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
 });
 
-test('rejects duplicate pin', () => {
-  const config = withPins(example, ['1001', '1002', '1003', '1004', '1004']);
+test('rejects the documented access-code placeholder', () => {
+  const message = messageFor(() => validateSeedConfig(example));
+
+  assert.match(message, /accessCode.*placeholder/i);
+  assert.doesNotMatch(message, /SET_UNIQUE_ACCESS_CODE/);
+});
+
+test('rejects duplicate access codes using exact untrimmed values', () => {
+  const config = withAccessCodes(example);
+  config.members[4].accessCode = VALID_ACCESS_CODES[3];
 
   const message = messageFor(() => validateSeedConfig(config));
 
-  assert.match(message, /member member5.*pin.*unique/i);
-  assert.doesNotMatch(message, /1004/);
+  assert.match(message, /member member5.*accessCode.*unique/i);
+  assert.doesNotMatch(message, new RegExp(VALID_ACCESS_CODES[3].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
+test('rejects the removed legacy credential field', () => {
+  const config = withAccessCodes(example);
+  config.members[0].pin = '1234';
+
+  const message = messageFor(() => validateSeedConfig(config));
+
+  assert.match(message, /legacy.*credential.*not supported/i);
+  assert.doesNotMatch(message, /1234/);
 });
 
 test('rejects duplicate authUid', () => {
-  const config = withPins(example, ['1001', '1002', '1003', '1004', '1005']);
+  const config = withAccessCodes(example);
   config.members[4].authUid = config.members[3].authUid;
 
   assert.throws(() => validateSeedConfig(config), /authUid.*unique/i);
 });
 
 test('rejects duplicate member id', () => {
-  const config = withPins(example, ['1001', '1002', '1003', '1004', '1005']);
+  const config = withAccessCodes(example);
   config.members[4].id = config.members[3].id;
 
   assert.throws(() => validateSeedConfig(config), /id.*unique/i);
 });
 
 test('rejects trimmed duplicate member id', () => {
-  const config = withPins(example, ['1001', '1002', '1003', '1004', '1005']);
+  const config = withAccessCodes(example);
   config.members[4].id = ' member4 ';
 
   assert.throws(() => validateSeedConfig(config), /id.*unique/i);
 });
 
 test('rejects trimmed duplicate authUid', () => {
-  const config = withPins(example, ['1001', '1002', '1003', '1004', '1005']);
+  const config = withAccessCodes(example);
   config.members[4].authUid = ' dazhugong_main_member4 ';
 
   assert.throws(() => validateSeedConfig(config), /authUid.*unique/i);
 });
 
-test('rejects numeric PIN collisions', () => {
-  const config = withPins(example, ['1001', '1002', '1003', '1004', 1004]);
+test('rejects non-string access codes rather than coercing them', () => {
+  const config = withAccessCodes(example);
+  config.members[4].accessCode = 123456789012;
 
   const message = messageFor(() => validateSeedConfig(config));
 
-  assert.match(message, /member member5.*pin.*unique/i);
-  assert.doesNotMatch(message, /1004/);
+  assert.match(message, /member member5.*accessCode.*string/i);
+  assert.doesNotMatch(message, /123456789012/);
 });
 
 test('rejects non-array members', () => {
@@ -461,7 +509,7 @@ test('rejects empty members', () => {
 });
 
 test('rejects authUid longer than 128 characters', () => {
-  const config = withPins(example, ['1001', '1002', '1003', '1004', '1005']);
+  const config = withAccessCodes(example);
   config.members[0].authUid = `${'a'.repeat(129)}`;
 
   assert.throws(() => validateSeedConfig(config), /authUid.*128/i);
@@ -469,29 +517,29 @@ test('rejects authUid longer than 128 characters', () => {
 
 for (const field of ['name', 'avatar', 'color']) {
   test(`rejects missing required display field ${field}`, () => {
-    const config = withPins(example, ['1001', '1002', '1003', '1004', '1005']);
+    const config = withAccessCodes(example);
     config.members[0][field] = ' ';
 
     const message = messageFor(() => validateSeedConfig(config));
 
     assert.match(message, new RegExp(`${field}.*non-empty`, 'i'));
-    assert.doesNotMatch(message, /1001/);
+    assert.doesNotMatch(message, /River|Stone/);
   });
 }
 
-test('rejects missing required avatar value with no PIN leakage', () => {
-  const config = withPins(example, ['1001', '1002', '1003', '1004', '1005']);
+test('rejects missing required avatar value with no access-code leakage', () => {
+  const config = withAccessCodes(example);
   config.members[0].avatar = '';
 
   const message = messageFor(() => validateSeedConfig(config));
 
   assert.match(message, /avatar.*non-empty/i);
-  assert.doesNotMatch(message, /1001/);
+  assert.doesNotMatch(message, /River|Stone/);
 });
 
 test('preflights all member docs before any auth or writes and aborts on swapped auth UIDs', async () => {
   const { seed } = require('./seed');
-  const config = withPins(cloneMembers(2), ['1001', '1002']);
+  const config = withAccessCodes(cloneMembers(2));
   const harness = createFirestoreHarness({
     preflightSnapshots: {
       'groups/main/members/member1': { authUid: 'dazhugong_main_member2' },
@@ -551,7 +599,7 @@ test('preflights all member docs before any auth or writes and aborts on swapped
 });
 
 test('offboards omitted members without deleting their documents, reports, or tokens', async () => {
-  const config = withPins(cloneMembers(1), ['1001']);
+  const config = withAccessCodes(cloneMembers(1));
   const removedAuthUid = 'dazhugong_main_member2';
   const harness = createFirestoreHarness({
     existingDocs: {
@@ -596,7 +644,7 @@ test('offboards omitted members without deleting their documents, reports, or to
 });
 
 test('reactivates a configured member and enables Auth while updating credentials', async () => {
-  const config = withPins(cloneMembers(1), ['1001']);
+  const config = withAccessCodes(cloneMembers(1));
   const authUid = 'dazhugong_main_member1';
   const harness = createFirestoreHarness({
     existingDocs: {
@@ -630,7 +678,7 @@ test('reactivates a configured member and enables Auth while updating credential
       data: {
         email: 'dazhugong_main_member1@dazhugong.invalid',
         displayName: '你',
-        password: 'dazhugong.firebase-auth.v1:dazhugong_main_member1:1001',
+        password: 'DzG2!jmaxj7oMt03P8RHcOaVaq84KcTp4VTiqYDc3rp10rRM',
         disabled: false,
       },
     }
@@ -638,7 +686,7 @@ test('reactivates a configured member and enables Auth while updating credential
 });
 
 test('never disables a configured Auth UID reused by an omitted member document', async () => {
-  const config = withPins(cloneMembers(1), ['1001']);
+  const config = withAccessCodes(cloneMembers(1));
   const configuredAuthUid = 'dazhugong_main_member1';
   const harness = createFirestoreHarness({
     existingDocs: {
@@ -672,7 +720,7 @@ test('never disables a configured Auth UID reused by an omitted member document'
 
 test('preserves existing totalTokens by omitting it from member updates', async () => {
   const { seed } = require('./seed');
-  const config = withPins(cloneMembers(1), ['1001']);
+  const config = withAccessCodes(cloneMembers(1));
   const harness = createFirestoreHarness({
     preflightSnapshots: {
       'groups/main/members/member1': {
@@ -745,7 +793,7 @@ test('preserves existing totalTokens by omitting it from member updates', async 
 
 test('merges a concurrently created member without clobbering its legacy totalTokens', async () => {
   const { seed } = require('./seed');
-  const config = withPins(cloneMembers(1), ['1001']);
+  const config = withAccessCodes(cloneMembers(1));
   const harness = createFirestoreHarness({
     preflightSnapshots: {
       'groups/main/members/member1': null,
@@ -804,7 +852,7 @@ test('merges a concurrently created member without clobbering its legacy totalTo
 
 test('creates new member docs without a denormalized totalTokens field', async () => {
   const { seed } = require('./seed');
-  const config = withPins(cloneMembers(1), ['1001']);
+  const config = withAccessCodes(cloneMembers(1));
   const harness = createFirestoreHarness({
     preflightSnapshots: {
       'groups/main/members/member1': null,
@@ -857,7 +905,7 @@ test('creates new member docs without a denormalized totalTokens field', async (
 
 test('aborts member merge when the transaction snapshot authUid changed after preflight', async () => {
   const { seed } = require('./seed');
-  const config = withPins(cloneMembers(1), ['1001']);
+  const config = withAccessCodes(cloneMembers(1));
   const harness = createFirestoreHarness({
     preflightSnapshots: {
       'groups/main/members/member1': {
