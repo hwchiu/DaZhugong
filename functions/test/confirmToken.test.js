@@ -26,6 +26,7 @@ function createFixture() {
       status: "pending",
       createdAt: new Date("2026-08-23T07:00:00.000Z"),
       confirmedAt: null,
+      resolvedAt: null,
     },
   });
   const handler = createConfirmTokenHandler({
@@ -102,12 +103,16 @@ test("confirmation atomically creates one report and increments target once", as
     db.read("groups/main/tokens/token1").confirmedAt,
     SERVER_TIME
   );
+  assert.deepEqual(
+    db.read("groups/main/tokens/token1").resolvedAt,
+    SERVER_TIME
+  );
   assert.equal(db.read("groups/main/members/member2").totalTokens, 1);
   assert.deepEqual(db.read("groups/main/reports/token1"), {
     tokenId: "token1",
     reporterId: "member1",
     targetId: "member2",
-    confirmedAt: SERVER_TIME,
+    timestamp: SERVER_TIME,
   });
   assert.equal(db.list("groups/main/reports/").length, 1);
 });

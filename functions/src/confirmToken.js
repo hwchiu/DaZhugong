@@ -77,12 +77,13 @@ function createConfirmTokenHandler({db, serverTimestamp, increment}) {
         transaction.update(tokenRef, {
           status: "confirmed",
           confirmedAt: serverTimestamp(),
+          resolvedAt: serverTimestamp(),
         });
         transaction.set(groupRef.collection("reports").doc(tokenId), {
           tokenId,
           reporterId: token.reporterId,
           targetId: token.targetId,
-          confirmedAt: serverTimestamp(),
+          timestamp: serverTimestamp(),
         });
         transaction.update(targetRef, {
           totalTokens: increment(1),

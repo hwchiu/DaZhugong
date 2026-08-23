@@ -104,7 +104,13 @@ function createLoginWithPinHandler(dependencies) {
                 ? timestampAt(dependencies, currentMillis + LOCK_DURATION_MS)
                 : null,
           });
-          return {authenticated: false};
+          return {
+            authenticated: false,
+            failureCode:
+              failedAttempts >= MAX_FAILURES
+                ? "resource-exhausted"
+                : "permission-denied",
+          };
         }
 
         const authUid = member.authUid;
@@ -127,11 +133,16 @@ function createLoginWithPinHandler(dependencies) {
       });
 
       if (!result.authenticated) {
-        throw callableError("permission-denied", "Invalid credentials.");
+        throw callableError(
+          result.failureCode,
+          result.failureCode === "resource-exhausted"
+            ? "Too many attempts. Try again later."
+            : "Invalid credentials."
+        );
       }
 
-      const token = await auth.createCustomToken(result.authUid);
-      return {token};
+      const customToken = await auth.createCustomToken(result.authUid);
+      return {customToken};
     } catch (error) {
       throw sanitizeError(error);
     }

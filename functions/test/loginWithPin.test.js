@@ -75,7 +75,7 @@ test("login creates a custom token for the public member authUid", async () => {
   const {handler, customTokenUids} = await createFixture();
 
   assert.deepEqual(await login(handler), {
-    token: "custom-token:uid-member1",
+    customToken: "custom-token:uid-member1",
   });
   assert.deepEqual(customTokenUids, ["uid-member1"]);
 });
@@ -94,15 +94,30 @@ test("wrong PIN increments consecutive failures without revealing the cause", as
   assert.equal(authState.lockedUntil, null);
 });
 
-test("the fifth consecutive failure locks login for fifteen minutes", async () => {
-  const {db, handler} = await createFixture({failedAttempts: 4});
+test("the fifth consecutive failure persists the lock and reports exhaustion", async () => {
+  const {db, handler} = await createFixture();
 
-  await assert.rejects(login(handler, "9999"), expectCode("permission-denied"));
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    await assert.rejects(
+      login(handler, "9999"),
+      expectCode("permission-denied", "Invalid credentials.")
+    );
+    const authState = db.read("groups/main/memberAuth/member1");
+    assert.equal(authState.failedAttempts, attempt);
+    assert.deepEqual(authState.lastFailedAt, NOW);
+    assert.equal(authState.lockedUntil, null);
+  }
 
-  const authState = db.read("groups/main/memberAuth/member1");
-  assert.equal(authState.failedAttempts, 5);
+  await assert.rejects(
+    login(handler, "9999"),
+    expectCode("resource-exhausted", "Too many attempts. Try again later.")
+  );
+
+  const lockedState = db.read("groups/main/memberAuth/member1");
+  assert.equal(lockedState.failedAttempts, 5);
+  assert.deepEqual(lockedState.lastFailedAt, NOW);
   assert.deepEqual(
-    authState.lockedUntil,
+    lockedState.lockedUntil,
     new Date(NOW.getTime() + 15 * 60 * 1000)
   );
 });

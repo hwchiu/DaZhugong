@@ -46,6 +46,7 @@ function createReportTokenHandler({db, serverTimestamp}) {
         status: "pending",
         createdAt: serverTimestamp(),
         confirmedAt: null,
+        resolvedAt: null,
       });
 
       return {tokenId: tokenRef.id};

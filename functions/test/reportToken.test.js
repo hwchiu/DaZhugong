@@ -98,5 +98,6 @@ test("report derives reporterId from auth and creates a pending token", async ()
     status: "pending",
     createdAt: SERVER_TIME,
     confirmedAt: null,
+    resolvedAt: null,
   });
 });
