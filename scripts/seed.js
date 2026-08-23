@@ -4,8 +4,8 @@ const path = require('node:path');
 const bcrypt = require('bcryptjs');
 const admin = require('firebase-admin');
 
-function readJson(filePath) {
-  return fs.readFile(filePath, 'utf8').then((content) => JSON.parse(content));
+function readJson(fsModule, filePath) {
+  return fsModule.readFile(filePath, 'utf8').then((content) => JSON.parse(content));
 }
 
 function normalizeMemberText(value) {
@@ -88,7 +88,7 @@ function validateSeedConfig(config) {
   };
 }
 
-function buildGroupPayload({ groupId, members, existingGroup = {} }) {
+function buildGroupPayload({ groupId, members, existingGroup = {}, fieldValue = admin.firestore.FieldValue }) {
   return {
     ...existingGroup,
     id: groupId,
@@ -96,8 +96,50 @@ function buildGroupPayload({ groupId, members, existingGroup = {} }) {
     lunchStart: '12:00',
     lunchEnd: '13:00',
     memberIds: members.map((member) => member.id),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: fieldValue.serverTimestamp(),
   };
+}
+
+function buildMemberPayload(member) {
+  return {
+    authUid: member.authUid,
+    name: member.name,
+    avatar: member.avatar,
+    color: member.color,
+  };
+}
+
+async function preflightMemberAuthUids(groupRef, members) {
+  const memberRefs = members.map((member) => groupRef.collection('members').doc(member.id));
+  const snapshots = await Promise.all(memberRefs.map((ref) => ref.get()));
+
+  snapshots.forEach((snapshot, index) => {
+    const member = members[index];
+    const existingAuthUid = normalizeMemberText(snapshot.get('authUid'));
+
+    if (existingAuthUid && existingAuthUid !== member.authUid) {
+      throw new Error(`Member ${member.id} authUid does not match configured value.`);
+    }
+  });
+
+  return memberRefs;
+}
+
+async function writeMemberDoc(firestore, memberRef, member) {
+  await firestore.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(memberRef);
+    const payload = buildMemberPayload(member);
+
+    if (snapshot.exists) {
+      await transaction.set(memberRef, payload, { merge: true });
+      return;
+    }
+
+    await transaction.create(memberRef, {
+      ...payload,
+      totalTokens: 0,
+    });
+  });
 }
 
 async function ensureAuthUser(auth, member) {
@@ -118,53 +160,49 @@ async function ensureAuthUser(auth, member) {
   }
 }
 
-async function seed(options = {}) {
+async function seed(options = {}, deps = {}) {
   const serviceAccountPath = options.serviceAccountPath || path.join(__dirname, 'serviceAccountKey.json');
   const membersPath = options.membersPath || path.join(__dirname, 'members.local.json');
+  const fsModule = deps.fs || fs;
+  const adminClient = deps.admin || admin;
+  const bcryptLib = deps.bcrypt || bcrypt;
 
   const [serviceAccount, seedConfig] = await Promise.all([
-    readJson(serviceAccountPath),
-    readJson(membersPath),
+    readJson(fsModule, serviceAccountPath),
+    readJson(fsModule, membersPath),
   ]);
 
   const { groupId, members } = validateSeedConfig(seedConfig);
 
-  if (admin.apps.length === 0) {
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
+  if (adminClient.apps.length === 0) {
+    adminClient.initializeApp({
+      credential: adminClient.credential.cert(serviceAccount),
     });
   }
 
-  const firestore = admin.firestore();
-  const auth = admin.auth();
+  const firestore = adminClient.firestore();
+  const auth = adminClient.auth();
   const groupRef = firestore.doc(`groups/${groupId}`);
   const groupSnapshot = await groupRef.get();
   const existingGroup = groupSnapshot.exists ? groupSnapshot.data() : {};
 
-  await groupRef.set(buildGroupPayload({ groupId, members, existingGroup }), { merge: true });
+  await preflightMemberAuthUids(groupRef, members);
+
+  await groupRef.set(buildGroupPayload({
+    groupId,
+    members,
+    existingGroup,
+    fieldValue: adminClient.firestore.FieldValue,
+  }), { merge: true });
 
   for (const member of members) {
     await ensureAuthUser(auth, member);
 
     const memberRef = groupRef.collection('members').doc(member.id);
-    const memberSnapshot = await memberRef.get();
-    const totalTokens = memberSnapshot.exists && typeof memberSnapshot.get('totalTokens') === 'number'
-      ? memberSnapshot.get('totalTokens')
-      : 0;
-
-    await memberRef.set(
-      {
-        authUid: member.authUid,
-        name: member.name,
-        avatar: member.avatar,
-        color: member.color,
-        totalTokens,
-      },
-      { merge: false }
-    );
+    await writeMemberDoc(firestore, memberRef, member);
 
     const memberAuthRef = groupRef.collection('memberAuth').doc(member.id);
-    const pinHash = await bcrypt.hash(member.pin, 12);
+    const pinHash = await bcryptLib.hash(member.pin, 12);
 
     await memberAuthRef.set(
       {
@@ -196,9 +234,12 @@ if (require.main === module) {
 }
 
 module.exports = {
+  buildMemberPayload,
   ensureAuthUser,
   validateMemberConfig,
   buildGroupPayload,
+  preflightMemberAuthUids,
+  writeMemberDoc,
   seed,
   validateSeedConfig,
 };
