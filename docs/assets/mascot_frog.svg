@@ -44,7 +44,7 @@
 
     <!-- Simple dot eyes -->
     <use href="#dot-eye" x="-37" y="-29" />
-    <use href="#dot-eye" x="47" y="-29" />
+    <use href="#dot-eye" x="37" y="-29" />
 
     <!-- Soft pink blush cheeks -->
     <ellipse cx="-48" cy="10" rx="14" ry="9" fill="url(#blush-gradient)" filter="url(#soft-blur)" />

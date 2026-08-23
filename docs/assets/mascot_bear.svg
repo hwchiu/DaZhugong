@@ -11,7 +11,7 @@
       <stop offset="65%" stop-color="#f8fafc" />
       <stop offset="100%" stop-color="#e2e8f0" />
     </radialGradient>
-    <radialGradient id="vinyl-bear-fixed" cx="35%" cy="30%" r="70%">
+    <radialGradient id="vinyl-bear" cx="35%" cy="30%" r="70%">
       <stop offset="0%" stop-color="#ffedd5" />
       <stop offset="60%" stop-color="#fed7aa" />
       <stop offset="100%" stop-color="#ca8a04" />
@@ -45,14 +45,14 @@
   <!-- BEAR MASCOT (Centered at x=150, y=170) -->
   <g transform="translate(150, 170)" filter="url(#vinyl-shadow)">
     <!-- Ears -->
-    <circle cx="-54" cy="-54" r="27" fill="url(#vinyl-bear-fixed)" stroke="#b45309" stroke-opacity="0.2" stroke-width="1.2" />
+    <circle cx="-54" cy="-54" r="27" fill="url(#vinyl-bear)" stroke="#b45309" stroke-opacity="0.2" stroke-width="1.2" />
     <circle cx="-54" cy="-54" r="16" fill="url(#vinyl-pink-inner)" />
 
-    <circle cx="54" cy="-54" r="27" fill="url(#vinyl-bear-fixed)" stroke="#b45309" stroke-opacity="0.2" stroke-width="1.2" />
+    <circle cx="54" cy="-54" r="27" fill="url(#vinyl-bear)" stroke="#b45309" stroke-opacity="0.2" stroke-width="1.2" />
     <circle cx="54" cy="-54" r="16" fill="url(#vinyl-pink-inner)" />
 
     <!-- Head Body -->
-    <ellipse cx="0" cy="0" rx="80" ry="72" fill="url(#vinyl-bear-fixed)" stroke="#b45309" stroke-opacity="0.2" stroke-width="1.5" />
+    <ellipse cx="0" cy="0" rx="80" ry="72" fill="url(#vinyl-bear)" stroke="#b45309" stroke-opacity="0.2" stroke-width="1.5" />
 
     <!-- White Snout Patch -->
     <ellipse cx="0" cy="22" rx="27" ry="19" fill="url(#vinyl-white)" />

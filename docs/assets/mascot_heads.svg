@@ -29,12 +29,6 @@
     </radialGradient>
     <!-- Soft Milk Tea Bear Vinyl (Bear) -->
     <radialGradient id="vinyl-bear" cx="35%" cy="30%" r="70%">
-      <stop offset="0%" stop-color="#fed7aa" />
-      <stop offset="60%" stop-color="#fdbb2d" stop-color-override="#f97316" /> <!-- Fallback to rich tan -->
-      <stop offset="65%" stop-color="#f59e0b" />
-      <stop offset="100%" stop-color="#b45309" />
-    </radialGradient>
-    <radialGradient id="vinyl-bear-fixed" cx="35%" cy="30%" r="70%">
       <stop offset="0%" stop-color="#ffedd5" />
       <stop offset="60%" stop-color="#fed7aa" />
       <stop offset="100%" stop-color="#ca8a04" />
@@ -200,14 +194,14 @@
   <!-- MASCOT 4: BEAR (Grape Purple Collar) -->
   <g transform="translate(1080, 450)" filter="url(#vinyl-shadow)">
     <!-- Ears -->
-    <circle cx="-68" cy="-68" r="34" fill="url(#vinyl-bear-fixed)" stroke="#b45309" stroke-opacity="0.25" stroke-width="1.5" />
+    <circle cx="-68" cy="-68" r="34" fill="url(#vinyl-bear)" stroke="#b45309" stroke-opacity="0.25" stroke-width="1.5" />
     <circle cx="-68" cy="-68" r="20" fill="url(#vinyl-pink-inner)" />
 
-    <circle cx="68" cy="-68" r="34" fill="url(#vinyl-bear-fixed)" stroke="#b45309" stroke-opacity="0.25" stroke-width="1.5" />
+    <circle cx="68" cy="-68" r="34" fill="url(#vinyl-bear)" stroke="#b45309" stroke-opacity="0.25" stroke-width="1.5" />
     <circle cx="68" cy="-68" r="20" fill="url(#vinyl-pink-inner)" />
 
     <!-- Head Body -->
-    <ellipse cx="0" cy="0" rx="100" ry="90" fill="url(#vinyl-bear-fixed)" stroke="#b45309" stroke-opacity="0.25" stroke-width="2" />
+    <ellipse cx="0" cy="0" rx="100" ry="90" fill="url(#vinyl-bear)" stroke="#b45309" stroke-opacity="0.25" stroke-width="2" />
 
     <!-- White Snout Patch -->
     <ellipse cx="0" cy="28" rx="34" ry="24" fill="url(#vinyl-white)" />
