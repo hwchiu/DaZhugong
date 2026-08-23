@@ -91,7 +91,7 @@ describe('useGroup', () => {
       group: { id: 'group-1', name: 'Lunch Crew' },
       members: [
         { id: 'alpha', name: 'Alpha', active: true, totalTokens: 2 },
-        { id: 'zeta', name: 'Zeta', active: false, totalTokens: 9 },
+        { id: 'zeta', name: 'Zeta', active: false, totalTokens: 1 },
       ],
       loading: false,
       error: null,
@@ -100,6 +100,32 @@ describe('useGroup', () => {
     expect(firestoreMock.doc).toHaveBeenCalledWith(firestoreMock.db, 'groups', 'group-1');
     expect(firestoreMock.collection).toHaveBeenCalledWith(firestoreMock.db, 'groups', 'group-1', 'members');
     expect(firestoreMock.collection).toHaveBeenCalledWith(firestoreMock.db, 'groups', 'group-1', 'reports');
+  });
+
+  it('ignores legacy inactive member totals and derives totals from reports only', async () => {
+    const { useGroup } = await loadHook();
+    const { result } = renderHook(() => useGroup('group-1'));
+
+    const [groupListener, membersListener, reportsListener] = firestoreMock.state.subscriptions;
+    await act(async () => {
+      groupListener.next(makeSnapshot({ id: 'group-1', data: { name: 'Lunch Crew' } }));
+      membersListener.next(makeSnapshot({
+        docs: [
+          makeDoc('inactive-member', { name: 'Zeta', active: false, totalTokens: 9 }),
+        ],
+      }));
+      reportsListener.next(makeSnapshot({
+        docs: [
+          makeDoc('report-1', { targetId: 'inactive-member' }),
+        ],
+      }));
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.members).toEqual([
+      { id: 'inactive-member', name: 'Zeta', active: false, totalTokens: 1 },
+    ]);
   });
 
   it('returns a null group when the document does not exist', async () => {

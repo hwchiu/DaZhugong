@@ -1,10 +1,11 @@
-import { lazy, Suspense, useMemo } from 'react';
+import { useMemo } from 'react';
+import LazyBoundary from '../components/LazyBoundary.jsx';
 import { useGroup } from '../hooks/useGroup.js';
 import { useAuthStore } from '../store/authStore.js';
 
-const StatsPieChart = lazy(() => import('../components/StatsPieChart.jsx'));
 const SAFE_LOAD_ERROR_MESSAGE = '目前無法載入統計，請稍後再試。';
 const FALLBACK_COLORS = ['#ec4899', '#0ea5e9', '#f97316', '#14b8a6', '#8b5cf6'];
+const loadStatsPieChart = () => import('../components/StatsPieChart.jsx');
 
 function getMemberName(member) {
   return member?.name ?? member?.displayName ?? '未命名成員';
@@ -92,11 +93,18 @@ export default function Stats() {
               <section className="rounded-[2rem] bg-white p-5 shadow-lg shadow-rose-100" aria-labelledby="distribution-heading">
                 <h2 id="distribution-heading" className="text-lg font-bold text-slate-950">成員占比</h2>
                 <p className="mt-1 text-sm leading-6 text-slate-700">圓餅顏色只用於大型視覺區分，精確數值請查看下方排名。</p>
-                <Suspense
-                  fallback={<div role="status" className="mt-4 flex h-64 items-center justify-center rounded-2xl bg-slate-50 text-sm font-semibold text-slate-700">準備統計圖表中…</div>}
+                <LazyBoundary
+                  loader={loadStatsPieChart}
+                  loadingFallback={<div role="status" className="mt-4 flex h-64 items-center justify-center rounded-2xl bg-slate-50 text-sm font-semibold text-slate-700">準備統計圖表中…</div>}
+                  errorFallback={() => (
+                    <div role="alert" className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-8 text-center">
+                      <p className="font-semibold text-slate-950">統計圖表暫時無法顯示</p>
+                      <p className="mt-2 text-sm leading-6 text-slate-700">請先參考下方排名與總 Token。</p>
+                    </div>
+                  )}
                 >
-                  <StatsPieChart data={chartData} total={totalTokens} />
-                </Suspense>
+                  {(StatsPieChart) => <StatsPieChart data={chartData} total={totalTokens} />}
+                </LazyBoundary>
               </section>
             ) : (
               <section className="rounded-[2rem] border border-dashed border-slate-300 bg-white px-6 py-7 text-center">

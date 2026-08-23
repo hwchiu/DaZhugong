@@ -1,12 +1,13 @@
-import { lazy, Suspense, useMemo } from 'react';
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import LazyBoundary from '../components/LazyBoundary.jsx';
 import MemberAvatar from '../components/MemberAvatar.jsx';
 import PendingBanner from '../components/PendingBanner.jsx';
 import { useGroup } from '../hooks/useGroup.js';
 import { useAuthStore } from '../store/authStore.js';
 
 const SAFE_LOAD_ERROR_MESSAGE = '目前無法同步首頁資料，請稍後再試。';
-const PiggyBank3D = lazy(() => import('../components/PiggyBank3D.jsx'));
+const loadPiggyBank3D = () => import('../components/PiggyBank3D.jsx');
 
 function getMemberName(member) {
   return member?.name ?? member?.displayName ?? '未命名成員';
@@ -25,6 +26,28 @@ function getSafeAccentStyle(color) {
 
 function formatTokenCount(count) {
   return `${count} Token`;
+}
+
+function PiggyBankErrorFallback({ retry }) {
+  return (
+    <div
+      role="alert"
+      className="flex h-72 flex-col items-center justify-center rounded-[1.75rem] border border-white/15 bg-white/5 px-5 text-center text-slate-100"
+    >
+      <span role="img" aria-label="3D 小豬暫時無法顯示" className="text-6xl">
+        🐷
+      </span>
+      <p className="mt-4 text-base font-semibold">3D 小豬暫時無法顯示</p>
+      <p className="mt-2 text-sm leading-6 text-slate-200">先看總 Token 與成員列表，稍後可以重新載入小豬模型。</p>
+      <button
+        type="button"
+        onClick={retry}
+        className="mt-4 inline-flex min-h-11 items-center justify-center rounded-full border border-white/40 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+      >
+        重試 3D 小豬
+      </button>
+    </div>
+  );
 }
 
 function compareMembers(left, right, currentMemberId) {
@@ -106,8 +129,8 @@ export default function Home() {
   const activeMembers = useMemo(() => memberSummary.filter((member) => member.active === true), [memberSummary]);
   const totalConfirmedTokens = useMemo(
     () =>
-      activeMembers.reduce((sum, member) => sum + (Number.isFinite(member.totalTokens) ? member.totalTokens : 0), 0),
-    [activeMembers],
+      memberSummary.reduce((sum, member) => sum + (Number.isFinite(member.totalTokens) ? member.totalTokens : 0), 0),
+    [memberSummary],
   );
 
   const loading = groupLoading;
@@ -155,8 +178,9 @@ export default function Home() {
                   小豬撲滿會在資料同步後出現
                 </div>
               ) : (
-                <Suspense
-                  fallback={(
+                <LazyBoundary
+                  loader={loadPiggyBank3D}
+                  loadingFallback={(
                     <div
                       role="status"
                       aria-live="polite"
@@ -165,9 +189,10 @@ export default function Home() {
                       正在準備 3D 小豬…
                     </div>
                   )}
+                  errorFallback={({ retry }) => <PiggyBankErrorFallback retry={retry} />}
                 >
-                  <PiggyBank3D members={memberSummary} />
-                </Suspense>
+                  {(PiggyBank3D) => <PiggyBank3D members={memberSummary} />}
+                </LazyBoundary>
               )}
             </div>
             <p className="mt-3 text-center text-xs leading-5 text-slate-300">
@@ -230,7 +255,7 @@ export default function Home() {
               <div>
                 <h2 className="text-lg font-semibold text-slate-950">成員 Token 總覽</h2>
                 <p className="mt-1 text-sm leading-6 text-slate-600">
-                  active 成員依已確認紀錄統計，inactive 成員保留歷史總數。
+                  所有成員都依已確認 reports 統計，inactive 只保留歷史身分標記。
                 </p>
               </div>
 

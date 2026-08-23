@@ -96,7 +96,7 @@ describe('Home page', () => {
     expect(screen.queryByText('0 Token')).toBe(null);
   });
 
-  it('derives total and per-member counts from useGroup totals, lazy-loads the 3D pig, and keeps currency text out', async () => {
+  it('sums confirmed totals across active and inactive historical members, lazy-loads the 3D pig, and keeps currency text out', async () => {
     useGroupMock.mockReturnValue({
       members: [
         { id: 'inactive', name: '小美', active: false, color: '#0ea5e9', totalTokens: 999 },
@@ -110,7 +110,7 @@ describe('Home page', () => {
     renderHome();
 
     expect(screen.getByText('嗨，自己')).toBeTruthy();
-    expect(screen.getByText('103 Token')).toBeTruthy();
+    expect(screen.getByText('本期已確認').parentElement?.textContent).toContain('1102 Token');
     expect(screen.getByText('中午先吃飯，公事晚點再說也可以。')).toBeTruthy();
     expect((await screen.findByTestId('piggy-bank-3d')).textContent).toContain('1102 Token');
     expect(screen.queryByText('3D 小豬展示區，下一個任務會換成正式模型。')).toBe(null);
@@ -126,7 +126,25 @@ describe('Home page', () => {
     expect(screen.queryByText('元')).toBe(null);
   });
 
-  it('orders active members ahead of inactive ones while keeping inactive history in the full summary', () => {
+  it('keeps historical totals in the headline and hasReports state after a member is offboarded', async () => {
+    useGroupMock.mockReturnValue({
+      members: [
+        { id: 'self', name: '自己', active: true, avatar: 'pig', color: '#ec4899', totalTokens: 0 },
+        { id: 'former', name: '小美', active: false, avatar: 'cat', color: '#0ea5e9', totalTokens: 1 },
+      ],
+      loading: false,
+      error: null,
+    });
+
+    renderHome();
+    await screen.findByTestId('piggy-bank-3d');
+
+    expect(screen.getByText('本期已確認').parentElement?.textContent).toContain('1 Token');
+    expect(screen.queryByText('今天大家都很克制，還沒有人被記 Token。')).toBe(null);
+    expect(within(screen.getByRole('list', { name: '成員 Token 總覽' })).getByText('小美')).toBeTruthy();
+  });
+
+  it('orders active members ahead of inactive ones while keeping inactive history in the full summary', async () => {
     useGroupMock.mockReturnValue({
       members: [
         { id: 'inactive-z', name: '小美', active: false, avatar: 'cat', color: '#0ea5e9' },
@@ -138,6 +156,7 @@ describe('Home page', () => {
     });
 
     renderHome();
+    await screen.findByTestId('piggy-bank-3d');
 
     const activeStrip = screen.getByRole('list', { name: '活躍成員 Token 摘要' });
     expect(within(activeStrip).getByText('自己')).toBeTruthy();
@@ -162,7 +181,7 @@ describe('Home page', () => {
     expect(screen.getByRole('heading', { name: '投票頁面' })).toBeTruthy();
   });
 
-  it('shows a cheerful empty state once the dashboard loads with no reports yet', () => {
+  it('shows a cheerful empty state once the dashboard loads with no reports yet', async () => {
     useGroupMock.mockReturnValue({
       members: [
         { id: 'self', name: '自己', active: true, avatar: 'pig', color: '#ec4899' },
@@ -173,6 +192,7 @@ describe('Home page', () => {
     });
 
     renderHome();
+    await screen.findByTestId('piggy-bank-3d');
 
     expect(screen.getByText('今天大家都很克制，還沒有人被記 Token。')).toBeTruthy();
     expect(screen.getByText('第一票還沒出現，先好好吃飯最重要。')).toBeTruthy();
