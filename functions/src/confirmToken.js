@@ -80,7 +80,6 @@ function createConfirmTokenHandler({db, serverTimestamp, increment}) {
           resolvedAt: serverTimestamp(),
         });
         transaction.set(groupRef.collection("reports").doc(tokenId), {
-          tokenId,
           reporterId: token.reporterId,
           targetId: token.targetId,
           timestamp: serverTimestamp(),
@@ -90,7 +89,10 @@ function createConfirmTokenHandler({db, serverTimestamp, increment}) {
         });
       });
 
-      return {status: data.action === "confirm" ? "confirmed" : "rejected"};
+      return {
+        success: true,
+        status: data.action === "confirm" ? "confirmed" : "rejected",
+      };
     } catch (error) {
       throw sanitizeError(error);
     }

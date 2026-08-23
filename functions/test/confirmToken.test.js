@@ -72,6 +72,7 @@ test("target can reject a pending token without incrementing totals", async () =
   const {db, handler} = createFixture();
 
   assert.deepEqual(await call(handler, "uid-2", "reject"), {
+    success: true,
     status: "rejected",
   });
   assert.deepEqual(db.read("groups/main/tokens/token1"), {
@@ -94,7 +95,11 @@ test("confirmation atomically creates one report and increments target once", as
     call(handler, "uid-2"),
   ]);
 
-  assert.equal(outcomes.filter(({status}) => status === "fulfilled").length, 1);
+  const fulfilled = outcomes.find(({status}) => status === "fulfilled");
+  assert.deepEqual(fulfilled.value, {
+    success: true,
+    status: "confirmed",
+  });
   const rejected = outcomes.find(({status}) => status === "rejected");
   assert.equal(rejected.reason.code, "failed-precondition");
 
@@ -109,7 +114,6 @@ test("confirmation atomically creates one report and increments target once", as
   );
   assert.equal(db.read("groups/main/members/member2").totalTokens, 1);
   assert.deepEqual(db.read("groups/main/reports/token1"), {
-    tokenId: "token1",
     reporterId: "member1",
     targetId: "member2",
     timestamp: SERVER_TIME,

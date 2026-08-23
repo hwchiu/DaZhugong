@@ -60,7 +60,7 @@ test("report rejects self-reporting", async () => {
       auth: {uid: "uid-1"},
       data: {groupId: "main", targetId: "member1"},
     }),
-    expectCode("failed-precondition")
+    expectCode("invalid-argument")
   );
 });
 

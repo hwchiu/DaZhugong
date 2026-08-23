@@ -27,7 +27,7 @@ function createReportTokenHandler({db, serverTimestamp}) {
       const actor = await resolveMemberIdentity(request, groupId);
 
       if (actor.id === targetId) {
-        throw callableError("failed-precondition", "Self-reporting is not allowed.");
+        throw callableError("invalid-argument", "Self-reporting is not allowed.");
       }
 
       const groupRef = db.collection("groups").doc(groupId);

@@ -462,7 +462,8 @@ git commit -m "feat: initialize react with firebase auth startup guard"
 - Create: `functions/src/reportToken.js`
 - Create: `functions/src/confirmToken.js`
 - Create: `functions/src/index.js`
-- Test: `functions/test/callables.test.js`
+- Test: `functions/test/*.test.js`
+- Test: `functions/test/emulator/callables.test.js`
 
 - [ ] **Step 1: 建立 Functions package**
 
@@ -471,9 +472,11 @@ git commit -m "feat: initialize react with firebase auth startup guard"
   "name": "dazhugong-functions",
   "version": "1.0.0",
   "main": "src/index.js",
-  "engines": { "node": "22" },
+  "engines": { "node": ">=22.12.0" },
   "scripts": {
-    "test": "firebase emulators:exec --config ../firebase.json --only auth,firestore --project demo-dazhugong \"node --test test/*.test.js\""
+    "test": "npm run test:unit && npm run test:emulator",
+    "test:unit": "node --test test/*.test.js",
+    "test:emulator": "firebase emulators:exec --config ../firebase.json --only auth,firestore --project demo-dazhugong \"node --test test/emulator/*.test.js\""
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -481,7 +484,7 @@ git commit -m "feat: initialize react with firebase auth startup guard"
     "firebase-functions": "^5.0.0"
   },
   "devDependencies": {
-    "firebase-functions-test": "^3.4.0",
+    "firebase-functions-test": "^3.5.0",
     "firebase-tools": "^14.0.0"
   }
 }
@@ -744,38 +747,32 @@ exports.confirmToken = confirmToken;
 
 - [ ] **Step 7: 先寫 Emulator tests**
 
-`functions/test/callables.test.js` 使用 `node:test`、`firebase-functions-test`、Admin SDK 連 Firestore Emulator，並在每個 test seed `members`、`memberAuth`、`tokens`。以 `fft.wrap()` 呼叫 callable，未登入 case 不帶 `auth`，authenticated case 只帶 `{ auth: { uid: '<authUid>' } }`。stub `admin.auth().createCustomToken(uid)` 回傳 `test-token:${uid}`。
+`functions/test/emulator/callables.test.js` 使用 `node:test`、`firebase-functions-test`、Admin SDK 連 Auth / Firestore Emulator。先在 Auth Emulator 建立固定 UID，並為每個 test seed 獨立的 `members`、`tokens`。測試必須 `require('../../src/index')` 後以 `fft.wrap()` 包裝實際匯出的 `reportToken`、`confirmToken` callable；不得只測 handler factory。呼叫 wrapped v2 callable 時傳入 `{ data, auth }` request，未登入 case 的 `auth` 為 `undefined`，authenticated case 的 `auth` 為 `{ uid: '<authUid>' }`。
 
 必須實作以下具名測試與 assertion：
 
 ```text
-loginWithPin throttles on the fifth failure
-  first 4 wrong PIN calls => permission-denied
-  fifth wrong PIN => resource-exhausted
-  memberAuth.failedAttempts === 5
-  memberAuth.lockedUntil > now
-  correct PIN while locked => resource-exhausted
-
-loginWithPin returns the stable member auth UID
-  set lockedUntil to a past timestamp
-  correct PIN => customToken === test-token:dazhugong_main_member1
-  failedAttempts === 0 and lockedUntil === null
-
-reportToken rejects unauthenticated and spoofed identities
-  no auth => unauthenticated
-  reporterId/memberId in request.data => invalid-argument
+successful authenticated report derives the reporter
   auth UID member1 with target member2 => stored reporterId === member1
 
-confirmToken prevents impersonation
-  token target is member2, auth UID is member1 => permission-denied
-  adding memberId: member2 to data still cannot authorize the call
+unauthenticated report is rejected
+  no auth => unauthenticated and no token document
 
-confirmToken is concurrent and idempotent
+only the target can confirm a pending token
+  non-target auth UID => permission-denied
+  target auth UID => { success: true, status: "confirmed" }
+
+target can reject a pending token
+  target auth UID => { success: true, status: "rejected" }
+  token status === rejected, totalTokens unchanged, no report
+
+duplicate concurrent confirmation increments and reports exactly once
   Promise.allSettled(two confirm calls authenticated as member2)
   exactly one fulfilled and one rejected with failed-precondition
-  token.status === confirmed
+  fulfilled result === { success: true, status: "confirmed" }
   member2.totalTokens === 1
   exactly one report exists at reports/{tokenId}
+  report fields are exactly targetId, reporterId, timestamp
 ```
 
 - [ ] **Step 8: 執行 Functions tests**
@@ -784,13 +781,7 @@ confirmToken is concurrent and idempotent
 npm --prefix functions test
 ```
 
-Expected:
-
-```text
-tests 5
-pass 5
-fail 0
-```
+Expected: unit tests pass first, then the five Auth / Firestore Emulator integration tests pass. Local unit-only development may use `npm --prefix functions run test:unit`. The emulator suite and full `npm test` require Java 21; Java 8 is an environment blocker rather than a test failure.
 
 - [ ] **Step 9: Commit**
 
@@ -1289,6 +1280,11 @@ jobs:
             frontend/package-lock.json
             functions/package-lock.json
 
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
       - name: Install functions dependencies
         run: npm --prefix functions ci
 
@@ -1331,13 +1327,14 @@ jobs:
 - [ ] **Step 3: 本機重現 CI**
 
 ```bash
+java -version # Java 21
 npm --prefix functions ci
 npm --prefix functions test
 npm --prefix frontend ci
 npm --prefix frontend run build
 ```
 
-Expected: functions tests 5/5 pass；frontend build exit 0。
+Expected: functions unit tests and five emulator integration tests pass；frontend build exit 0。
 
 - [ ] **Step 4: Commit**
 
