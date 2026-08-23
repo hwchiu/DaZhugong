@@ -53,7 +53,7 @@ CI/CD：GitHub Actions → firebase deploy
 4. PIN 正確時，Function 讀取該 member 預先 seed 的穩定 `authUid`，以 Firebase Admin SDK 建立 custom token。
 5. 前端以 `signInWithCustomToken` 登入 Firebase Authentication；Firebase Auth persistence 負責恢復登入，前端不得把任意 member 物件當成授權身分持久化。
 
-Seed 流程必須從未提交的 `scripts/members.local.json` 載入 member 顯示資料與每位 member 各自唯一的 4 位 PIN；範本檔為 `scripts/members.example.json`，只能包含不可用的示例值或 `<SET_UNIQUE_PIN>` 佔位，並引導開發者先複製成 local 檔再填入私有 PIN。seed 時只把 PIN 驗證、雜湊並寫入 server-only 的 `memberAuth`，不得在任何 log、UI、文件或 acceptance step 中顯示或暗示共用預設 PIN。
+Seed 流程必須從未提交的 `scripts/members.local.json` 載入 member 顯示資料、穩定 `authUid` 與每位 member 各自唯一的 4 位 PIN；範本檔為 `scripts/members.example.json`，只能包含安全的示例 `authUid` 值與 `<SET_UNIQUE_PIN>` 佔位，並引導開發者先複製成 local 檔再填入私有 PIN。seed 時只把 PIN 驗證、雜湊並寫入 server-only 的 `memberAuth`，不得在任何 log、UI、文件或 acceptance step 中顯示或暗示共用預設 PIN。
 
 所有具權限的 callable（包含 `reportToken`、`confirmToken`）都必須：
 - 設定 `enforceAppCheck: true`。

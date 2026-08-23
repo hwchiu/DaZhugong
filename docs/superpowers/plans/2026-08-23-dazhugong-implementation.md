@@ -55,7 +55,7 @@ DaZhugong/
 │       └── callables.test.js             # auth、冒用、節流、並行確認測試
 ├── scripts/
 │   ├── seed.js                           # Firestore 初始資料（讀取 members.local.json）
-│   ├── members.example.json              # 可提交的範本（無可用 PIN）
+│   ├── members.example.json              # 可提交的範本（含安全示例 authUid，PIN 無效）
 │   └── members.local.json                # 本機私有設定（勿提交）
 ├── firestore.rules                       # Firestore 安全規則
 ├── firebase.json                         # Firebase 設定
@@ -239,6 +239,7 @@ async function seed() {
   });
 
   const seenPins = new Set();
+  const seenAuthUids = new Set();
 
   for (const member of membersConfig.members) {
     assertValidPin(member.pin, member.id);
@@ -246,6 +247,14 @@ async function seed() {
       throw new Error(`Duplicate PIN detected for ${member.id}`);
     }
     seenPins.add(member.pin);
+
+    if (typeof member.authUid !== 'string' || member.authUid.length === 0 || member.authUid.length > 128) {
+      throw new Error(`Invalid authUid for ${member.id}: must be a non-empty Firebase-compatible UID`);
+    }
+    if (seenAuthUids.has(member.authUid)) {
+      throw new Error(`Duplicate authUid detected for ${member.id}: ${member.authUid}`);
+    }
+    seenAuthUids.add(member.authUid);
 
     const pinHash = await bcrypt.hash(member.pin, 12);
     await ensureAuthUser(member);
@@ -267,17 +276,18 @@ async function seed() {
   }
 }
 
-seed();
+seed().then(() => process.exit(0)).catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
 ```
 
 Seed command:
 
 ```bash
 cp scripts/members.example.json scripts/members.local.json
-# 編輯 scripts/members.local.json，為每位 member 設定唯一且私有的 4 位 PIN
+# 編輯 scripts/members.local.json，保留每位 member 的 authUid 並設定唯一且私有的 4 位 PIN
 npm run seed
-  .then(() => process.exit(0))
-  .catch((error) => { console.error(error); process.exit(1); });
 ```
 
 `authUid` 是 member 的永久 Firebase Auth UID。之後連結 Google provider 時保留此 UID，不以 Google 登入產生的新 UID 覆寫。
