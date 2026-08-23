@@ -21,7 +21,7 @@
       "id": "member3",
       "authUid": "dazhugong_main_member3",
       "name": "Amy",
-      "avatar": "fox",
+      "avatar": "frog",
       "color": "#7ED957",
       "pin": "<SET_UNIQUE_PIN>"
     },
@@ -37,7 +37,7 @@
       "id": "member5",
       "authUid": "dazhugong_main_member5",
       "name": "Vivian",
-      "avatar": "rabbit",
+      "avatar": "dog",
       "color": "#9B59B6",
       "pin": "<SET_UNIQUE_PIN>"
     }

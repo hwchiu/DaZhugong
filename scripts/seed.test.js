@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { validateSeedConfig } = require('./seed');
+const { buildGroupPayload, validateSeedConfig } = require('./seed');
 const example = require('./members.example.json');
 
 function withPins(config, pins) {
@@ -40,6 +40,31 @@ test('accepts the five-member example after replacing placeholder pins', () => {
       'dazhugong_main_member5',
     ]
   );
+});
+
+test('builds the main group payload with lunch metadata and preserves extras', () => {
+  const payload = buildGroupPayload({
+    groupId: 'main',
+    members: [
+      { id: 'member1' },
+      { id: 'member2' },
+    ],
+    existingGroup: {
+      createdAt: '2026-01-01T00:00:00.000Z',
+      theme: 'orange',
+    },
+  });
+
+  assert.deepEqual(payload, {
+    createdAt: '2026-01-01T00:00:00.000Z',
+    theme: 'orange',
+    id: 'main',
+    name: '午餐禁公事團',
+    lunchStart: '12:00',
+    lunchEnd: '13:00',
+    memberIds: ['member1', 'member2'],
+    updatedAt: payload.updatedAt,
+  });
 });
 
 test('normalizes member fields before returning them', () => {

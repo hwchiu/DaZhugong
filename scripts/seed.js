@@ -88,6 +88,18 @@ function validateSeedConfig(config) {
   };
 }
 
+function buildGroupPayload({ groupId, members, existingGroup = {} }) {
+  return {
+    ...existingGroup,
+    id: groupId,
+    name: '午餐禁公事團',
+    lunchStart: '12:00',
+    lunchEnd: '13:00',
+    memberIds: members.map((member) => member.id),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+}
+
 async function ensureAuthUser(auth, member) {
   try {
     const userRecord = await auth.getUser(member.authUid);
@@ -126,16 +138,10 @@ async function seed(options = {}) {
   const firestore = admin.firestore();
   const auth = admin.auth();
   const groupRef = firestore.doc(`groups/${groupId}`);
+  const groupSnapshot = await groupRef.get();
+  const existingGroup = groupSnapshot.exists ? groupSnapshot.data() : {};
 
-  const memberIds = members.map((member) => member.id);
-  await groupRef.set(
-    {
-      id: groupId,
-      memberIds,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    },
-    { merge: true }
-  );
+  await groupRef.set(buildGroupPayload({ groupId, members, existingGroup }), { merge: true });
 
   for (const member of members) {
     await ensureAuthUser(auth, member);
@@ -192,6 +198,7 @@ if (require.main === module) {
 module.exports = {
   ensureAuthUser,
   validateMemberConfig,
+  buildGroupPayload,
   seed,
   validateSeedConfig,
 };
