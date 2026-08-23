@@ -105,43 +105,48 @@ describe('firebase configuration helpers', () => {
     );
   });
 
-  it('returns empty services outside production when Firebase config is absent', async () => {
-    const { initializeFirebaseServices } = await loadFirebaseModule();
+  it('fails outside production when Firebase config is absent', async () => {
+    const { initializeFirebase } = await loadFirebaseModule();
 
-    const services = initializeFirebaseServices({ MODE: 'development' }, makeBrowserRuntime());
-
-    expect(services).toMatchObject({
-      app: null,
-      auth: null,
-      db: null,
-      functions: null,
-      appCheck: null,
-    });
+    await expect(initializeFirebase({ MODE: 'development' }, makeBrowserRuntime())).rejects.toThrow(
+      /Missing required Firebase environment variables/,
+    );
     expect(firebaseAppMock.initializeApp).not.toHaveBeenCalled();
   });
 
   it('fails clearly in production when the App Check site key is absent', async () => {
-    const { initializeFirebaseServices } = await loadFirebaseModule();
+    const { initializeFirebase } = await loadFirebaseModule();
 
-    expect(() =>
-      initializeFirebaseServices(
+    await expect(
+      initializeFirebase(
         makeFirebaseEnv({ MODE: 'production', VITE_FIREBASE_APPCHECK_SITE_KEY: '' }),
         makeBrowserRuntime(),
       ),
-    ).toThrow(/VITE_FIREBASE_APPCHECK_SITE_KEY/);
+    ).rejects.toThrow(/VITE_FIREBASE_APPCHECK_SITE_KEY/);
     expect(firebaseAppCheckMock.initializeAppCheck).not.toHaveBeenCalled();
   });
 
-  it('skips App Check in development when the site key is absent', async () => {
-    const { initializeFirebaseServices } = await loadFirebaseModule();
+  it('fails in development when the App Check site key is absent', async () => {
+    const { initializeFirebase } = await loadFirebaseModule();
 
-    const services = initializeFirebaseServices(makeFirebaseEnv(), makeBrowserRuntime());
+    await expect(initializeFirebase(makeFirebaseEnv(), makeBrowserRuntime())).rejects.toThrow(
+      /VITE_FIREBASE_APPCHECK_SITE_KEY/,
+    );
+    expect(firebaseAppCheckMock.initializeAppCheck).not.toHaveBeenCalled();
+  });
 
-    expect(services.app?.name).toBe('mock-app');
-    expect(services.auth?.service).toBe('auth');
-    expect(services.db?.service).toBe('firestore');
-    expect(services.functions?.region).toBe('asia-east1');
-    expect(services.appCheck).toBeNull();
+  it('fails in development when the App Check debug token is absent', async () => {
+    const { initializeFirebase } = await loadFirebaseModule();
+
+    await expect(
+      initializeFirebase(
+        makeFirebaseEnv({
+          VITE_FIREBASE_APPCHECK_SITE_KEY: 'site-key',
+          VITE_FIREBASE_APPCHECK_DEBUG_TOKEN: '   ',
+        }),
+        makeBrowserRuntime(),
+      ),
+    ).rejects.toThrow(/VITE_FIREBASE_APPCHECK_DEBUG_TOKEN/);
     expect(firebaseAppCheckMock.initializeAppCheck).not.toHaveBeenCalled();
   });
 
@@ -154,10 +159,10 @@ describe('firebase configuration helpers', () => {
     expect(normalizeAppCheckDebugToken(' debug-token ')).toBe('debug-token');
   });
 
-  it('sets the development App Check debug token before initialization', async () => {
-    const { initializeFirebaseServices } = await loadFirebaseModule();
+  it('initializes Firebase and updates exported services when development config is complete', async () => {
+    const firebaseModule = await loadFirebaseModule();
 
-    const services = initializeFirebaseServices(
+    const services = await firebaseModule.initializeFirebase(
       makeFirebaseEnv({
         VITE_FIREBASE_APPCHECK_SITE_KEY: 'site-key',
         VITE_FIREBASE_APPCHECK_DEBUG_TOKEN: ' true ',
@@ -169,12 +174,17 @@ describe('firebase configuration helpers', () => {
     expect(services.appCheck?.debugTokenAtInit).toBe(true);
     expect(firebaseAppCheckMock.ReCaptchaEnterpriseProvider).toHaveBeenCalledWith('site-key');
     expect(firebaseAppCheckMock.initializeAppCheck).toHaveBeenCalledTimes(1);
+    expect(firebaseModule.firebaseApp).toBe(services.app);
+    expect(firebaseModule.auth).toBe(services.auth);
+    expect(firebaseModule.db).toBe(services.db);
+    expect(firebaseModule.functions).toBe(services.functions);
+    expect(firebaseModule.appCheck).toBe(services.appCheck);
   });
 
   it('never enables the App Check debug token in production', async () => {
-    const { initializeFirebaseServices } = await loadFirebaseModule();
+    const { initializeFirebase } = await loadFirebaseModule();
 
-    const services = initializeFirebaseServices(
+    const services = await initializeFirebase(
       makeFirebaseEnv({
         MODE: 'production',
         VITE_FIREBASE_APPCHECK_SITE_KEY: 'site-key',

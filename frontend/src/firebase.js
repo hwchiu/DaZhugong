@@ -70,47 +70,45 @@ export function validateFirebaseConfig(env = {}) {
   };
 }
 
-function createEmptyFirebaseServices() {
+export function validateAppCheckConfig(env = {}) {
+  const siteKey = readEnvValue(env, 'VITE_FIREBASE_APPCHECK_SITE_KEY');
+
+  if (!siteKey) {
+    throw new Error('Missing required Firebase App Check site key: VITE_FIREBASE_APPCHECK_SITE_KEY');
+  }
+
+  if (isProductionEnvironment(env)) {
+    return { siteKey };
+  }
+
+  const debugToken = normalizeAppCheckDebugToken(env?.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN);
+
+  if (debugToken === undefined) {
+    throw new Error('Missing required Firebase App Check debug token: VITE_FIREBASE_APPCHECK_DEBUG_TOKEN');
+  }
+
   return {
-    app: null,
-    auth: null,
-    db: null,
-    functions: null,
-    appCheck: null,
+    siteKey,
+    debugToken,
   };
 }
 
-export function initializeFirebaseServices(env = import.meta.env, runtime = globalThis) {
-  const production = isProductionEnvironment(env);
-  const missingConfig = getMissingFirebaseConfigFields(env);
-
-  if (missingConfig.length > 0) {
-    if (production) {
-      throw new Error(`Missing required Firebase environment variables: ${missingConfig.join(', ')}`);
-    }
-
-    return createEmptyFirebaseServices();
-  }
-
+function initializeFirebaseServices(env = import.meta.env, runtime = globalThis) {
   const config = validateFirebaseConfig(env);
+  const { siteKey, debugToken } = validateAppCheckConfig(env);
   const app = getApps().length > 0 ? getApp() : initializeApp(config);
   const auth = getAuth(app);
   const db = getFirestore(app);
   const functions = getFunctions(app, 'asia-east1');
-  const siteKey = readEnvValue(env, 'VITE_FIREBASE_APPCHECK_SITE_KEY');
-
-  if (production && !siteKey) {
-    throw new Error('Missing required Firebase App Check site key: VITE_FIREBASE_APPCHECK_SITE_KEY');
-  }
 
   let appCheck = null;
 
   if (siteKey && isBrowserRuntime(runtime)) {
-    if (!production) {
-      const debugToken = normalizeAppCheckDebugToken(env?.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN);
+    if (!isProductionEnvironment(env)) {
+      globalThis.FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken;
 
-      if (debugToken !== undefined) {
-        globalThis.FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken;
+      if (runtime !== globalThis) {
+        runtime.FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken;
       }
     }
 
@@ -129,10 +127,39 @@ export function initializeFirebaseServices(env = import.meta.env, runtime = glob
   };
 }
 
-const firebaseServices = initializeFirebaseServices();
+let firebaseServices;
+let firebaseInitializationPromise;
 
-export const firebaseApp = firebaseServices.app;
-export const auth = firebaseServices.auth;
-export const db = firebaseServices.db;
-export const functions = firebaseServices.functions;
-export const appCheck = firebaseServices.appCheck;
+export let firebaseApp;
+export let auth;
+export let db;
+export let functions;
+export let appCheck;
+
+function assignFirebaseServices(services) {
+  firebaseServices = services;
+  firebaseApp = services.app;
+  auth = services.auth;
+  db = services.db;
+  functions = services.functions;
+  appCheck = services.appCheck;
+
+  return services;
+}
+
+export async function initializeFirebase(env = import.meta.env, runtime = globalThis) {
+  if (firebaseServices) {
+    return firebaseServices;
+  }
+
+  if (!firebaseInitializationPromise) {
+    firebaseInitializationPromise = Promise.resolve()
+      .then(() => assignFirebaseServices(initializeFirebaseServices(env, runtime)))
+      .catch((error) => {
+        firebaseInitializationPromise = undefined;
+        throw error;
+      });
+  }
+
+  return firebaseInitializationPromise;
+}
