@@ -95,6 +95,29 @@ describe('useTokens', () => {
     });
   });
 
+  it('subscribes to all reports when count is null or explicit all', async () => {
+    const { useTokens } = await loadHook();
+    const { result, rerender } = renderHook(({ count }) => useTokens('group-1', count), {
+      initialProps: { count: null },
+    });
+
+    expect(result.current).toMatchObject({
+      tokens: [],
+      loading: true,
+      error: null,
+    });
+    expect(firestoreMock.query.mock.calls[0]).toHaveLength(2);
+    expect(firestoreMock.limit).not.toHaveBeenCalled();
+
+    const firstSubscription = firestoreMock.state.subscriptions[0];
+
+    rerender({ count: 'all' });
+
+    expect(firstSubscription.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(firestoreMock.query.mock.calls[1]).toHaveLength(2);
+    expect(firestoreMock.limit).not.toHaveBeenCalled();
+  });
+
   it('rejects invalid counts and skips subscription work when the group is missing', async () => {
     const { useTokens } = await loadHook();
     const { result, rerender } = renderHook(({ groupId, count }) => useTokens(groupId, count), {

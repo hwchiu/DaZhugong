@@ -54,6 +54,10 @@ function toTokenDoc(docSnapshot) {
 }
 
 function normalizeCount(count) {
+  if (count === null || count === 'all') {
+    return 'all';
+  }
+
   if (typeof count !== 'number' || !Number.isFinite(count) || !Number.isInteger(count)) {
     return null;
   }
@@ -125,11 +129,11 @@ export function useTokens(groupId, count = 30) {
     });
 
     try {
-      const reportsQuery = query(
-        collection(db, 'groups', groupId, 'reports'),
-        orderBy('timestamp', 'desc'),
-        limit(normalizedCount),
-      );
+      const reportCollection = collection(db, 'groups', groupId, 'reports');
+      const reportsQuery =
+        normalizedCount === 'all'
+          ? query(reportCollection, orderBy('timestamp', 'desc'))
+          : query(reportCollection, orderBy('timestamp', 'desc'), limit(normalizedCount));
 
       unsubscribe = onSnapshot(
         reportsQuery,

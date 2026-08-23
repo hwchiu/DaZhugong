@@ -124,6 +124,33 @@ describe('Vote page', () => {
     expect(screen.queryByText('已確認 99 票')).toBe(null);
   });
 
+  it('uses the full report subscription so 101+ confirmed totals stay authoritative', () => {
+    useGroupMock.mockReturnValue({
+      members: [
+        { id: 'self', name: '自己', active: true, totalTokens: 22 },
+        { id: 'active-1', name: '小華', active: true, totalTokens: 99, avatar: 'cat' },
+        { id: 'active-2', name: '阿明', active: true, totalTokens: 77, avatar: 'frog' },
+      ],
+      loading: false,
+      error: null,
+    });
+    useTokensMock.mockReturnValue({
+      tokens: [
+        ...Array.from({ length: 101 }, (_, index) => ({ id: `report-a-${index + 1}`, targetId: 'active-1' })),
+        { id: 'report-b-1', targetId: 'active-2' },
+      ],
+      loading: false,
+      error: null,
+    });
+
+    renderVote();
+
+    expect(useTokensMock).toHaveBeenCalledWith('main', null);
+    expect(screen.getByText('已確認 101 票')).toBeTruthy();
+    expect(screen.getByText('已確認 1 票')).toBeTruthy();
+    expect(screen.queryByText('已確認 99 票')).toBe(null);
+  });
+
   it('shows an empty state when there are no other active members to report', () => {
     useGroupMock.mockReturnValue({
       members: [
@@ -234,5 +261,30 @@ describe('Vote page', () => {
     expect(screen.queryByText('do not leak this')).toBe(null);
     expect(screen.getByRole('button', { name: /小華/ }).disabled).toBe(false);
     expect(screen.getByRole('button', { name: '送出一票' }).disabled).toBe(false);
+  });
+
+  it('keeps the member card keyboard focus visible with a high-contrast outline', async () => {
+    const user = userEvent.setup();
+
+    useGroupMock.mockReturnValue({
+      members: [
+        { id: 'self', name: '自己', active: true },
+        { id: 'active-1', name: '小華', active: true, avatar: 'cat' },
+      ],
+      loading: false,
+      error: null,
+    });
+
+    renderVote();
+
+    await user.tab();
+
+    const huaButton = screen.getByRole('button', { name: /小華/ });
+    expect(document.activeElement).toBe(huaButton);
+    expect(huaButton.className).toContain('focus-visible:outline');
+    expect(huaButton.className).toContain('focus-visible:outline-[3px]');
+    expect(huaButton.className).toContain('focus-visible:outline-[#9f1239]');
+    expect(huaButton.className).toContain('focus-visible:outline-offset-2');
+    expect(huaButton.className).not.toContain('focus-visible:outline-none');
   });
 });

@@ -34,7 +34,7 @@ export default function Vote() {
   const currentMember = useAuthStore((state) => state.currentMember);
   const groupId = useAuthStore((state) => state.groupId);
   const { members, loading: groupLoading, error: groupError } = useGroup(groupId);
-  const { tokens, loading: tokensLoading, error: tokensError } = useTokens(groupId, 100);
+  const { tokens, loading: tokensLoading, error: tokensError } = useTokens(groupId, null);
   const [selectedId, setSelectedId] = useState('');
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState({ tone: null, message: '' });
@@ -164,7 +164,7 @@ export default function Vote() {
                         aria-pressed={selected}
                         aria-label={`${memberName}，已確認 ${member.confirmedCount} 票`}
                         onClick={() => handleSelect(member)}
-                        className={`flex min-h-44 flex-col items-center rounded-[1.75rem] border px-4 py-4 text-center transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-60 ${
+                        className={`flex min-h-44 flex-col items-center rounded-[1.75rem] border px-4 py-4 text-center transition focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-[#9f1239] disabled:cursor-not-allowed disabled:opacity-60 ${
                           selected
                             ? 'border-slate-900 bg-slate-50 shadow-md shadow-slate-200'
                             : 'border-slate-200 bg-white hover:border-slate-300'
