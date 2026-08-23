@@ -40,15 +40,12 @@ export default function MemberAvatar({ member, size = 'md', selected = false, on
     selected ? 'scale-[1.02] shadow-md shadow-rose-100' : 'bg-white'
   }`;
   const content = (
-    <>
-      <span
-        aria-hidden="true"
-        className={`${sizeClass} inline-flex items-center justify-center rounded-full bg-rose-50 leading-none`}
-      >
-        {avatarEmoji}
-      </span>
-      <span className="mt-2 text-sm font-semibold text-slate-700">{memberName}</span>
-    </>
+    <span
+      aria-hidden="true"
+      className={`${sizeClass} inline-flex items-center justify-center rounded-full bg-rose-50 leading-none`}
+    >
+      {avatarEmoji}
+    </span>
   );
 
   if (typeof onClick === 'function') {
@@ -56,6 +53,7 @@ export default function MemberAvatar({ member, size = 'md', selected = false, on
       <button
         type="button"
         aria-label={memberName}
+        title={memberName}
         aria-pressed={selected}
         onClick={onClick}
         className={className}
@@ -67,7 +65,7 @@ export default function MemberAvatar({ member, size = 'md', selected = false, on
   }
 
   return (
-    <div aria-label={memberName} className={className} style={getAvatarStyle(member, selected)}>
+    <div aria-label={memberName} title={memberName} className={className} style={getAvatarStyle(member, selected)}>
       {content}
     </div>
   );

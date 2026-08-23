@@ -24,6 +24,8 @@ describe('MemberAvatar', () => {
     const avatarButton = screen.getByRole('button', { name: 'Kevin' });
     expect(avatarButton.textContent).toContain('🐱');
     expect(avatarButton.getAttribute('aria-pressed')).toBe('true');
+    expect(avatarButton.getAttribute('title')).toBe('Kevin');
+    expect(screen.queryByText('Kevin')).toBe(null);
 
     await user.click(avatarButton);
 
@@ -34,7 +36,9 @@ describe('MemberAvatar', () => {
     render(<MemberAvatar member={member} size="sm" />);
 
     expect(screen.queryByRole('button', { name: 'Kevin' })).toBe(null);
-    expect(screen.getByText('Kevin')).toBeTruthy();
-    expect(screen.getByLabelText('Kevin').textContent).toContain('🐱');
+    const avatar = screen.getByLabelText('Kevin');
+    expect(avatar.getAttribute('title')).toBe('Kevin');
+    expect(avatar.textContent).toContain('🐱');
+    expect(screen.queryByText('Kevin')).toBe(null);
   });
 });
