@@ -23,7 +23,7 @@ export default function BottomNav() {
               end
               className={({ isActive }) =>
                 `flex min-h-14 flex-col items-center justify-center rounded-2xl px-2 py-1 text-xs font-medium transition ${
-                  isActive ? 'bg-rose-50 text-pink-600' : 'text-slate-600'
+                  isActive ? 'bg-rose-50 text-pink-700' : 'text-slate-600'
                 }`
               }
             >
