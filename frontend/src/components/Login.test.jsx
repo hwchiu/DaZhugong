@@ -114,6 +114,36 @@ describe('Login', () => {
     expect(submitButton.disabled).toBe(false);
   });
 
+  it('locks member selection and PIN input while the login request is pending', async () => {
+    const user = userEvent.setup();
+    const deferred = createDeferred();
+    firebaseState.loginCallable.mockReturnValue(deferred.promise);
+    firebaseState.signInWithCustomToken.mockResolvedValue({ uid: 'auth-1' });
+
+    renderLogin();
+
+    await user.click(screen.getByRole('button', { name: '選擇成員 你' }));
+    const pinInput = screen.getByLabelText('PIN 碼');
+
+    await user.type(pinInput, '2468');
+    await user.click(screen.getByRole('button', { name: '登入' }));
+
+    expect(screen.getByRole('status').textContent).toContain('你');
+    expect(screen.getByRole('button', { name: '選擇成員 你' }).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: '選擇成員 Kevin' }).disabled).toBe(true);
+    expect(screen.getByLabelText('PIN 碼').disabled).toBe(true);
+
+    await user.click(screen.getByRole('button', { name: '選擇成員 Kevin' }));
+
+    expect(screen.getByRole('button', { name: '選擇成員 你' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: '選擇成員 Kevin' }).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByLabelText('PIN 碼').value).toBe('2468');
+
+    deferred.resolve({ data: { customToken: 'custom-token-123' } });
+
+    await waitFor(() => expect(firebaseState.signInWithCustomToken).toHaveBeenCalledWith(firebaseState.auth, 'custom-token-123'));
+  });
+
   it('clears the PIN and any visible error when the selected member changes', async () => {
     const user = userEvent.setup();
     firebaseState.loginCallable.mockRejectedValue({
@@ -158,6 +188,20 @@ describe('Login', () => {
     });
     expect(firebaseState.signInWithCustomToken).toHaveBeenCalledWith(firebaseState.auth, 'custom-token-123');
     expect(screen.queryByRole('alert')).toBe(null);
+  });
+
+  it('uses a fixed accessible login button style regardless of member color', async () => {
+    const user = userEvent.setup();
+    renderLogin();
+
+    await user.click(screen.getByRole('button', { name: '選擇成員 Kevin' }));
+    await user.type(screen.getByLabelText('PIN 碼'), '2468');
+
+    const submitButton = screen.getByRole('button', { name: '登入' });
+
+    expect(submitButton.className).toContain('bg-pink-700');
+    expect(submitButton.className).toContain('text-white');
+    expect(submitButton.getAttribute('style')).toBe(null);
   });
 
   it('shows a safe generic error for a wrong PIN without leaking backend details', async () => {

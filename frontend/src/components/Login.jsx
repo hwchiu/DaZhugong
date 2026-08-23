@@ -46,19 +46,30 @@ function getSelectedCardStyle(member) {
 export default function Login() {
   const { members, loading: membersLoading, error: membersError } = useGroup(GROUP_ID);
   const [selectedMember, setSelectedMember] = useState(null);
+  const [pendingMember, setPendingMember] = useState(null);
   const [pin, setPin] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
+  const isInteractionLocked = membersLoading || membersError || isLoggingIn;
+  const visibleSelectedMemberId = (pendingMember ?? selectedMember)?.id;
   const canSubmit = Boolean(selectedMember) && pin.length === 4 && !membersLoading && !membersError && !isLoggingIn;
 
   function handleSelectMember(member) {
+    if (isInteractionLocked) {
+      return;
+    }
+
     setSelectedMember(member);
     setPin('');
     setErrorMessage('');
   }
 
   function handlePinChange(event) {
+    if (isInteractionLocked) {
+      return;
+    }
+
     setPin(sanitizePin(event.target.value));
     setErrorMessage('');
   }
@@ -70,6 +81,10 @@ export default function Login() {
       return;
     }
 
+    const memberToSubmit = selectedMember;
+    const pinToSubmit = pin;
+
+    setPendingMember(memberToSubmit);
     setIsLoggingIn(true);
     setErrorMessage('');
 
@@ -77,8 +92,8 @@ export default function Login() {
       const loginWithPin = httpsCallable(functions, 'loginWithPin');
       const result = await loginWithPin({
         groupId: GROUP_ID,
-        memberId: selectedMember.id,
-        pin,
+        memberId: memberToSubmit.id,
+        pin: pinToSubmit,
       });
       const customToken = result?.data?.customToken;
 
@@ -91,6 +106,7 @@ export default function Login() {
       setErrorMessage(getLoginErrorMessage(error));
       setPin('');
     } finally {
+      setPendingMember(null);
       setIsLoggingIn(false);
     }
   }
@@ -126,7 +142,7 @@ export default function Login() {
           {!membersLoading && !membersError ? (
             <div className="mt-4 grid grid-cols-2 gap-3">
               {members.map((member) => {
-                const isSelected = selectedMember?.id === member.id;
+                const isSelected = visibleSelectedMemberId === member.id;
 
                 return (
                   <button
@@ -135,9 +151,10 @@ export default function Login() {
                     aria-label={`選擇成員 ${member.name}`}
                     aria-pressed={isSelected}
                     onClick={() => handleSelectMember(member)}
+                    disabled={isInteractionLocked}
                     className={`rounded-2xl border-2 bg-white px-4 py-3 text-left transition ${
                       isSelected ? 'scale-[1.02] shadow-md shadow-rose-100' : 'border-transparent'
-                    }`}
+                    } disabled:cursor-not-allowed disabled:opacity-70`}
                     style={isSelected ? getSelectedCardStyle(member) : undefined}
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -171,7 +188,7 @@ export default function Login() {
               placeholder={selectedMember ? '請輸入 4 位 PIN' : '請先選擇成員'}
               value={pin}
               onChange={handlePinChange}
-              disabled={!selectedMember || membersLoading || Boolean(membersError) || isLoggingIn}
+              disabled={!selectedMember || isInteractionLocked}
               aria-label="PIN 碼"
               className="mt-2 w-full rounded-2xl border border-rose-200 bg-white px-4 py-3 text-center text-2xl tracking-[0.6em] text-slate-700 outline-none transition placeholder:tracking-normal placeholder:text-sm placeholder:text-slate-400 focus:border-rose-400 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
             />
@@ -179,7 +196,7 @@ export default function Login() {
 
           {isLoggingIn ? (
             <p role="status" aria-live="polite" className="text-sm text-rose-500">
-              登入中…
+              {pendingMember ? `登入中，使用 ${pendingMember.name} 的 PIN 驗證中…` : '登入中…'}
             </p>
           ) : null}
 
@@ -192,8 +209,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={!canSubmit}
-            className="w-full rounded-2xl px-4 py-3 text-base font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-slate-300"
-            style={!canSubmit ? undefined : { backgroundColor: selectedMember?.color || '#f43f5e' }}
+            className="w-full rounded-2xl bg-pink-700 px-4 py-3 text-base font-semibold text-white transition hover:bg-pink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-pink-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
             {isLoggingIn ? '登入中' : '登入'}
           </button>
