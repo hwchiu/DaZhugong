@@ -18,7 +18,8 @@ App 記錄所有 Token，作為未來聚餐基金的參考依據。
 ```
 前端：React (Vite) + Three.js + Tailwind CSS
 資料庫：Cloud Firestore（即時同步）
-後端邏輯：Firebase Cloud Functions (Node.js 22)
+身分驗證：Firebase Authentication custom token（PIN UX）+ Firebase App Check
+後端邏輯：Firebase Cloud Functions (Node.js 22，authenticated callable)
 部署：Firebase Hosting
 CI/CD：GitHub Actions → firebase deploy
 ```
@@ -43,16 +44,27 @@ CI/CD：GitHub Actions → firebase deploy
 
 ---
 
-## 四、登入機制（漸進式設計）
+## 四、登入與授權機制（漸進式設計）
 
-**Phase 1（當前實作）：**
-- 進入 app → 選擇頭像/名字 → 輸入 4 位 PIN → 進入主畫面
-- PIN 以雜湊方式儲存於 `/groups/{groupId}/memberAuth/{memberId}`，不明文儲存
-- 前端僅透過 callable Cloud Function 驗證 PIN，不直接讀取雜湊值
+**Phase 1（當前實作，維持簡單 PIN UX）：**
+1. 使用者選擇頭像/名字並輸入 4 位 PIN。
+2. 前端呼叫 `loginWithPin({ groupId, memberId, pin })`。這是唯一接受 `memberId` 作為登入候選身分的 callable。
+3. `loginWithPin` 從完全禁止客戶端存取的 `/groups/{groupId}/memberAuth/{memberId}` 讀取 `pinHash` 與失敗/鎖定狀態，在 Firestore transaction 內套用「5 次失敗鎖定 15 分鐘」的伺服器端節流。
+4. PIN 正確時，Function 讀取該 member 預先 seed 的穩定 `authUid`，以 Firebase Admin SDK 建立 custom token。
+5. 前端以 `signInWithCustomToken` 登入 Firebase Authentication；Firebase Auth persistence 負責恢復登入，前端不得把任意 member 物件當成授權身分持久化。
 
-**Phase 2（未來升級）：**
-- 替換登入模組為 Firebase Auth（Google 登入）
-- Firestore 資料結構不需變動（`userId` 欄位從 Phase 1 就存在）
+所有具權限的 callable（包含 `reportToken`、`confirmToken`）都必須：
+- 設定 `enforceAppCheck: true`。
+- 要求 `request.auth`，缺少時回傳 `unauthenticated`。
+- 只從 `request.auth.uid` 查詢 `members.authUid` 取得 actor member；不得接受或信任 `reporterId`、`memberId` 等 caller identity 欄位。
+- 僅把業務輸入（例如 `targetId`、`tokenId`、`action`）放在 `request.data`。
+
+前端啟動時必須初始化 Firebase App Check（reCAPTCHA Enterprise，開發環境使用明確設定的 debug token），使 callable request 自動攜帶 App Check token。正式部署前須在 Firebase Console 註冊 Web App、設定 site key 並啟用 Functions App Check enforcement。
+
+**Phase 2（未來 Google 登入）：**
+- Phase 1 seed 已為每位 member 建立不變的 `authUid`，Firebase Auth UID 與 Firestore member ID 的映射不需重建。
+- 帳號連結 migration 為：成員先用 PIN 登入既有 custom-token Firebase 使用者，再以 `linkWithPopup(currentUser, new GoogleAuthProvider())` 連結 Google provider，因此保留同一 `authUid`、member 文件及歷史資料。
+- 若 Google provider 已屬於另一 Firebase user，migration 必須先驗證兩個帳號的所有權，再把 provider 連結到既有 member `authUid` 並移除重複帳號；不得以新的 Google UID 覆寫 `authUid`。
 
 ---
 
@@ -68,23 +80,31 @@ CI/CD：GitHub Actions → firebase deploy
   ├── name: string              ← 顯示名稱
   ├── avatar: string            ← 頭像編號（預設動物圖示）
   ├── color: string             ← 專屬 Token 顏色（hex）
-  └── totalTokens: number       ← 累計違規 Token 數
+  ├── totalTokens: number       ← 累計違規 Token 數
+  └── authUid: string           ← seed 建立且永久不變的 Firebase Auth UID
 
 /groups/{groupId}/memberAuth/{memberId}
-  └── pinHash: string           ← PIN 雜湊值（僅後端可用）
+  ├── pinHash: string           ← bcrypt 雜湊（僅 Admin SDK 可用）
+  ├── failedAttempts: number    ← 連續失敗次數
+  ├── lockedUntil: timestamp?   ← 鎖定期限
+  ├── lastFailedAt: timestamp?
+  └── lastSuccessfulAt: timestamp?
 
 /groups/{groupId}/tokens/{tokenId}
   ├── reporterId: string        ← 舉報者 memberId
   ├── targetId: string          ← 被舉報者 memberId
   ├── status: string            ← "pending" | "confirmed" | "rejected"
   ├── createdAt: timestamp
-  └── confirmedAt: timestamp | null
+  ├── confirmedAt: timestamp | null
+  └── resolvedAt: timestamp | null
 
-/groups/{groupId}/reports/{reportId}   ← 僅 confirmed 後寫入
+/groups/{groupId}/reports/{tokenId}    ← 僅 confirmed 後以 tokenId 寫入
   ├── targetId: string
   ├── reporterId: string
   └── timestamp: timestamp
 ```
+
+`members` 是可公開讀取的顯示資料，絕不包含 `pinHash`。`memberAuth` 的 Firestore Rules 為 `allow read, write: if false`，只允許 Admin SDK 存取。
 
 ---
 
@@ -97,11 +117,12 @@ CI/CD：GitHub Actions → firebase deploy
 2. Cloud Function 寫入 tokens（status: "pending"）
 
 3. B 登入 app → 看到通知橫幅「你被舉報講公事！」
-   ├── 確認 → status: "confirmed"，totalTokens +1，觸發豬公投幣動畫
+   ├── 確認 → Firestore transaction 將 pending → confirmed、建立 `reports/{tokenId}`、totalTokens +1
    └── 否認 → status: "rejected"，紀錄取消
 
 4. 主畫面透過 Firestore 即時監聽自動更新
-5. PIN 驗證則由 callable Cloud Function 處理，前端不接觸 `pinHash`
+5. Transaction 會重新讀取 token 狀態；只有第一個 pending transition 能成功，因此重送或並行確認最多增加一次
+6. `loginWithPin` 只回傳 Firebase custom token；前端永遠不接觸 `pinHash` 或 `memberAuth`
 ```
 
 ---
@@ -126,12 +147,7 @@ CI/CD：GitHub Actions → firebase deploy
 | Secret 名稱 | 說明 | 取得方式 |
 |-------------|------|----------|
 | `FIREBASE_TOKEN` | Firebase CLI 部署金鑰 | 執行 `firebase login:ci` 取得 |
-| `VITE_FIREBASE_API_KEY` | Firebase Web API Key | Firebase Console → 專案設定 |
-| `VITE_FIREBASE_AUTH_DOMAIN` | `dazhugong-4f185.firebaseapp.com` | Firebase Console |
-| `VITE_FIREBASE_PROJECT_ID` | `dazhugong-4f185` | Firebase Console |
-| `VITE_FIREBASE_STORAGE_BUCKET` | `dazhugong-4f185.firebasestorage.app` | Firebase Console |
-| `VITE_FIREBASE_MESSAGING_SENDER_ID` | `488383910775` | Firebase Console |
-| `VITE_FIREBASE_APP_ID` | `1:488383910775:web:...` | Firebase Console |
+| `FIREBASE_CONFIG` | Web config JSON，包含 `apiKey`、`authDomain`、`projectId`、`storageBucket`、`messagingSenderId`、`appId`、`appCheckSiteKey` | Firebase Console → 專案設定 / App Check |
 
 ### GitHub Actions Workflow 概覽
 
@@ -142,10 +158,11 @@ on:
     branches: [main]
 
 jobs:
-  deploy:
+  test-build-deploy:
     steps:
-      - npm ci && npm run build   # 建置 React
-      - firebase deploy --only hosting,functions  # 部署
+      - npm --prefix functions ci && npm --prefix functions test
+      - npm --prefix frontend ci && npm --prefix frontend run build
+      - firebase deploy --only hosting,functions,firestore:rules
 ```
 
 ### 取得 FIREBASE_TOKEN 步驟
@@ -161,12 +178,14 @@ firebase login:ci
 ## 九、開發優先順序
 
 1. **Phase 1：基礎建設**
-   - Firebase 專案初始化、Firestore 規則設定
-   - React 專案建立（Vite）、路由設定
-   - GitHub Actions CI/CD pipeline
+   - Firebase 專案初始化、Firestore 規則與 `memberAuth` deny-all 設定
+   - Seed 穩定 `authUid`、Firebase Auth user、PIN hash 與節流狀態
+   - React 專案建立（Vite）、Firebase Auth/App Check 初始化
+   - Cloud Functions scaffold、驗證/授權與 transaction 測試
+   - 前後端 packages 都存在且測試可執行後，再加入 GitHub Actions CI/CD
 
 2. **Phase 2：核心功能**
-   - 登入（選名字 + PIN）
+   - 登入（選名字 + PIN → Firebase custom token）
    - 主畫面（靜態版本，先不含 3D）
    - 投票流程（舉報 + 確認）
 

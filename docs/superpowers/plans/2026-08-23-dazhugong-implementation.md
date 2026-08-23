@@ -4,9 +4,9 @@
 
 **Goal:** 建立一個手機優先的 Web App，讓朋友在午餐時可以互相舉報講公事，被確認後投入 Token 到 3D 豬公撲滿，累積聚餐基金。
 
-**Architecture:** React (Vite) 前端 + Firebase Hosting 部署，Firestore 即時同步資料，Cloud Functions 處理核心業務邏輯（舉報確認、Token 計數），Three.js 渲染互動式 3D 豬公。
+**Architecture:** React (Vite) 前端以 Firebase Auth custom token 維持 PIN UX，Firebase App Check 保護 callable；Cloud Functions 一律從 `request.auth.uid` 映射 actor，Firestore transaction 保證確認與 Token 計數只發生一次。Firestore 即時同步資料，Three.js 渲染互動式 3D 豬公，Firebase Hosting 部署。
 
-**Tech Stack:** React 18, Vite, Tailwind CSS, Three.js, Cannon-es, Firebase (Hosting + Firestore + Functions), GitHub Actions, Recharts
+**Tech Stack:** React 18, Vite, Tailwind CSS, Three.js, Cannon-es, Firebase (Auth + App Check + Hosting + Firestore + Functions + Emulator Suite), bcryptjs, GitHub Actions, Recharts
 
 ---
 
@@ -25,7 +25,7 @@ DaZhugong/
 │       ├── App.jsx                       # 路由設定
 │       ├── firebase.js                   # Firebase 初始化
 │       ├── store/
-│       │   └── authStore.js              # Zustand 登入狀態
+│       │   └── authStore.js              # Firebase Auth observer 衍生狀態（不持久化 member）
 │       ├── hooks/
 │       │   ├── useGroup.js               # 讀取群組+成員
 │       │   ├── usePending.js             # 待確認舉報
@@ -45,10 +45,14 @@ DaZhugong/
 │           └── Settings.jsx              # 設定
 ├── functions/
 │   ├── package.json
-│   └── src/
+│   ├── src/
 │       ├── index.js                      # Functions 進入點
+│       ├── memberIdentity.js             # request.auth.uid → member 映射
+│       ├── loginWithPin.js               # PIN 節流 + custom token
 │       ├── reportToken.js                # 建立舉報
 │       └── confirmToken.js              # 確認/否認舉報
+│   └── test/
+│       └── callables.test.js             # auth、冒用、節流、並行確認測試
 ├── scripts/
 │   └── seed.js                           # Firestore 初始資料
 ├── firestore.rules                       # Firestore 安全規則
@@ -66,7 +70,9 @@ DaZhugong/
 - Create: `firestore.rules`
 - Create: `.gitignore`
 
-- [ ] **Step 1: 建立 firebase.json**
+- [ ] **Step 1: 建立 Firebase 設定與 Emulator ports**
+
+`firebase.json`：
 
 ```json
 {
@@ -81,11 +87,17 @@ DaZhugong/
   },
   "firestore": {
     "rules": "firestore.rules"
+  },
+  "emulators": {
+    "auth": { "port": 9099 },
+    "firestore": { "port": 8080 },
+    "functions": { "port": 5001 },
+    "ui": { "enabled": true, "port": 4000 }
   }
 }
 ```
 
-- [ ] **Step 2: 建立 .firebaserc**
+`.firebaserc`：
 
 ```json
 {
@@ -95,9 +107,9 @@ DaZhugong/
 }
 ```
 
-- [ ] **Step 3: 建立 firestore.rules**
+- [ ] **Step 2: 建立 deny-by-default Firestore 規則**
 
-```
+```text
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -108,6 +120,10 @@ service cloud.firestore {
       match /members/{memberId} {
         allow read: if true;
         allow write: if false;
+      }
+
+      match /memberAuth/{memberId} {
+        allow read, write: if false;
       }
 
       match /tokens/{tokenId} {
@@ -124,11 +140,11 @@ service cloud.firestore {
 }
 ```
 
-> 所有寫入透過 Cloud Functions，前端只讀。
+`memberAuth` 必須有明確 deny 規則；Admin SDK 仍可從 Functions/seed 存取。所有客戶端寫入都拒絕。
 
-- [ ] **Step 4: 建立 .gitignore**
+- [ ] **Step 3: 建立 `.gitignore`**
 
-```
+```text
 node_modules/
 .env
 .env.local
@@ -139,26 +155,30 @@ scripts/serviceAccountKey.json
 .DS_Store
 ```
 
-- [ ] **Step 5: 在 Firebase Console 啟用 Firestore**
+- [ ] **Step 4: 驗證規則可由 Emulator 載入**
 
-前往 https://console.firebase.google.com/project/dazhugong-4f185/firestore → 建立資料庫 → 選 **production mode** → 選擇地區 `asia-east1`。
+```bash
+npx firebase-tools emulators:exec --only firestore --project demo-dazhugong "echo PASS"
+```
 
-- [ ] **Step 6: Commit**
+Expected: Firestore Emulator 啟動時無 rules parse error，命令輸出 `PASS`。`memberAuth` 的明確 deny 規則不得在後續 Task 被放寬。
+
+- [ ] **Step 5: Commit**
 
 ```bash
 git add firebase.json .firebaserc firestore.rules .gitignore
-git commit -m "chore: add firebase config, firestore rules, and gitignore"
+git commit -m "chore: add firebase config and private member auth rules"
 ```
 
 ---
 
-## Task 2：Firestore 初始資料 Seed
+## Task 2：穩定 Auth UID + PIN Seed
 
 **Files:**
 - Create: `scripts/seed.js`
-- Create: `package.json`（根目錄）
+- Create: `package.json`
 
-- [ ] **Step 1: 建立根目錄 package.json**
+- [ ] **Step 1: 建立 seed 依賴**
 
 ```json
 {
@@ -169,124 +189,118 @@ git commit -m "chore: add firebase config, firestore rules, and gitignore"
     "seed": "node scripts/seed.js"
   },
   "dependencies": {
+    "bcryptjs": "^2.4.3",
     "firebase-admin": "^12.0.0"
   }
 }
 ```
 
-```bash
-npm install
-```
+Run: `npm install`
 
-- [ ] **Step 2: 取得 Firebase Admin SDK 金鑰**
-
-前往 Firebase Console → 專案設定（齒輪）→ 服務帳戶 → **產生新的私密金鑰** → 下載 JSON → 儲存為 `scripts/serviceAccountKey.json`（已在 .gitignore 中，不會 commit）。
-
-- [ ] **Step 3: 建立 scripts/seed.js**
+- [ ] **Step 2: 建立 `scripts/seed.js`**
 
 ```js
 const admin = require('firebase-admin');
-const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const serviceAccount = require('./serviceAccountKey.json');
 
 admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 const db = admin.firestore();
 
-function hashPin(pin) {
-  return crypto.createHash('sha256').update(pin).digest('hex');
+const members = [
+  { id: 'member1', authUid: 'dazhugong_main_member1', name: '你', avatar: 'pig', color: '#FF6B8A' },
+  { id: 'member2', authUid: 'dazhugong_main_member2', name: 'Kevin', avatar: 'cat', color: '#4A90E2' },
+  { id: 'member3', authUid: 'dazhugong_main_member3', name: 'Amy', avatar: 'frog', color: '#7ED321' },
+  { id: 'member4', authUid: 'dazhugong_main_member4', name: 'Jamie', avatar: 'bear', color: '#9B59B6' },
+  { id: 'member5', authUid: 'dazhugong_main_member5', name: 'Vivian', avatar: 'dog', color: '#F39C12' },
+];
+
+async function ensureAuthUser(member) {
+  try {
+    await admin.auth().getUser(member.authUid);
+  } catch (error) {
+    if (error.code !== 'auth/user-not-found') throw error;
+    await admin.auth().createUser({ uid: member.authUid, displayName: member.name });
+  }
 }
 
 async function seed() {
   const groupRef = db.collection('groups').doc('main');
-
   await groupRef.set({
     name: '午餐禁公事團',
     lunchStart: '12:00',
     lunchEnd: '13:00',
   });
-  console.log('✅ Group created');
 
-  const members = [
-    { id: 'member1', name: '你', avatar: 'pig', color: '#FF6B8A', totalTokens: 0 },
-    { id: 'member2', name: 'Kevin', avatar: 'cat', color: '#4A90E2', totalTokens: 0 },
-    { id: 'member3', name: 'Amy', avatar: 'frog', color: '#7ED321', totalTokens: 0 },
-    { id: 'member4', name: 'Jamie', avatar: 'bear', color: '#9B59B6', totalTokens: 0 },
-    { id: 'member5', name: 'Vivian', avatar: 'dog', color: '#F39C12', totalTokens: 0 },
-  ];
-
-  for (const m of members) {
-    const { id, ...data } = m;
-    await groupRef.collection('members').doc(id).set(data);
-    await groupRef.collection('memberAuth').doc(id).set({
-      pinHash: hashPin('1234'),
+  for (const member of members) {
+    const pinHash = await bcrypt.hash('1234', 12);
+    await ensureAuthUser(member);
+    await groupRef.collection('members').doc(member.id).set({
+      authUid: member.authUid,
+      name: member.name,
+      avatar: member.avatar,
+      color: member.color,
+      totalTokens: 0,
     });
-    console.log(`✅ Seeded: ${m.name}`);
+    await groupRef.collection('memberAuth').doc(member.id).set({
+      pinHash,
+      failedAttempts: 0,
+      lockedUntil: null,
+      lastFailedAt: null,
+      lastSuccessfulAt: null,
+    });
+    console.log(`✅ ${member.id} → ${member.authUid}`);
   }
-
-  console.log('\n🐷 Seed complete! 預設 PIN 都是 1234，記得之後讓大家自己改。');
-  process.exit(0);
 }
 
-seed().catch((e) => { console.error(e); process.exit(1); });
+seed()
+  .then(() => process.exit(0))
+  .catch((error) => { console.error(error); process.exit(1); });
 ```
 
-- [ ] **Step 4: 執行 seed**
+`authUid` 是 member 的永久 Firebase Auth UID。之後連結 Google provider 時保留此 UID，不以 Google 登入產生的新 UID 覆寫。
+
+- [ ] **Step 3: 執行與驗證 seed**
 
 ```bash
 npm run seed
 ```
 
-預期輸出：
-```
-✅ Group created
-✅ Seeded: 你
-✅ Seeded: Kevin
-✅ Seeded: Amy
-✅ Seeded: Jamie
-✅ Seeded: Vivian
+預期：
+- Firebase Authentication 有 5 個 UID：`dazhugong_main_member1` 至 `dazhugong_main_member5`。
+- `groups/main/members/*` 含 `authUid`，不含 `pinHash`。
+- `groups/main/memberAuth/*` 含 bcrypt `pinHash` 與節流欄位，客戶端不可讀。
 
-🐷 Seed complete! 預設 PIN 都是 1234，記得之後讓大家自己改。
-```
-
-- [ ] **Step 5: 驗證 Firestore 有資料**
-
-前往 Firebase Console → Firestore → 確認 `groups/main/members` 有 5 筆資料。
-再確認 `groups/main/memberAuth` 也有對應的 5 筆 PIN 雜湊資料。
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add scripts/seed.js package.json package-lock.json
-git commit -m "chore: add firestore seed script with 5 members"
+git commit -m "chore: seed stable firebase auth member identities"
 ```
 
 ---
 
-## Task 3：React 專案建立
+## Task 3：React scaffold + Firebase Auth/App Check
 
 **Files:**
-- Create: `frontend/` (Vite project)
+- Create: `frontend/`
 - Create: `frontend/src/firebase.js`
 - Create: `frontend/src/index.css`
 
-- [ ] **Step 1: 建立 Vite React 專案**
+- [ ] **Step 1: 建立 Vite app 並安裝依賴**
 
 ```bash
 npm create vite@latest frontend -- --template react
 cd frontend
 npm install
-```
-
-- [ ] **Step 2: 安裝依賴**
-
-```bash
-cd frontend
 npm install firebase react-router-dom zustand three cannon-es recharts
 npm install -D tailwindcss postcss autoprefixer
 npx tailwindcss init -p
 ```
 
-- [ ] **Step 3: 設定 frontend/tailwind.config.js**
+- [ ] **Step 2: 建立 Tailwind、CSS 與 HTML**
+
+`frontend/tailwind.config.js`：
 
 ```js
 /** @type {import('tailwindcss').Config} */
@@ -298,10 +312,10 @@ export default {
     },
   },
   plugins: [],
-}
+};
 ```
 
-- [ ] **Step 4: 更新 frontend/src/index.css**
+`frontend/src/index.css`：
 
 ```css
 @tailwind base;
@@ -311,16 +325,16 @@ export default {
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  background: #FFF5F7;
+  background: #fff5f7;
   font-family: 'Noto Sans TC', sans-serif;
   -webkit-tap-highlight-color: transparent;
 }
 ```
 
-- [ ] **Step 5: 更新 frontend/index.html**
+`frontend/index.html`：
 
 ```html
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-TW">
   <head>
     <meta charset="UTF-8" />
@@ -335,10 +349,12 @@ body {
 </html>
 ```
 
-- [ ] **Step 6: 建立 frontend/src/firebase.js**
+- [ ] **Step 3: 建立 `frontend/src/firebase.js`**
 
 ```js
 import { initializeApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
 import { getFirestore } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 
@@ -351,148 +367,475 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
+const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY;
+if (!appCheckSiteKey) throw new Error('Missing VITE_FIREBASE_APPCHECK_SITE_KEY');
+
+if (import.meta.env.DEV && import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN) {
+  self.FIREBASE_APPCHECK_DEBUG_TOKEN =
+    import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN === 'true'
+      ? true
+      : import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN;
+}
+
 const app = initializeApp(firebaseConfig);
+initializeAppCheck(app, {
+  provider: new ReCaptchaEnterpriseProvider(appCheckSiteKey),
+  isTokenAutoRefreshEnabled: true,
+});
+
+export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const functions = getFunctions(app, 'asia-east1');
 ```
 
-- [ ] **Step 7: 建立 frontend/.env.local（本地開發用，不 commit）**
+- [ ] **Step 4: 建立本機環境變數**
 
-```
-VITE_FIREBASE_API_KEY=AIzaSyALpQZO4-gRpobOng8_04r09EdaoAAGxJ0
+`frontend/.env.local`：
+
+```text
+VITE_FIREBASE_API_KEY=<web-api-key>
 VITE_FIREBASE_AUTH_DOMAIN=dazhugong-4f185.firebaseapp.com
 VITE_FIREBASE_PROJECT_ID=dazhugong-4f185
 VITE_FIREBASE_STORAGE_BUCKET=dazhugong-4f185.firebasestorage.app
 VITE_FIREBASE_MESSAGING_SENDER_ID=488383910775
-VITE_FIREBASE_APP_ID=1:488383910775:web:d78289f4826331953d0772
+VITE_FIREBASE_APP_ID=<web-app-id>
+VITE_FIREBASE_APPCHECK_SITE_KEY=<recaptcha-enterprise-site-key>
+VITE_FIREBASE_APPCHECK_DEBUG_TOKEN=true
 ```
 
-- [ ] **Step 8: 驗證開發伺服器啟動**
+正式環境不得設定 debug token。
+
+- [ ] **Step 5: 完成 Firebase Console 部署前置**
+
+1. Authentication → 啟用 Firebase Authentication。
+2. App Check → 註冊 Web App → 選 reCAPTCHA Enterprise。
+3. 把 site key 放入本機/CI 的 `VITE_FIREBASE_APPCHECK_SITE_KEY`。
+4. Functions 部署並確認 App Check metrics 後，啟用 enforcement；所有本計畫 callable 本身也設定 `enforceAppCheck: true`。
+
+- [ ] **Step 6: 驗證 frontend build**
+
+Run: `npm --prefix frontend run build`
+
+Expected: exit 0，且 `frontend/dist/index.html` 存在。
+
+- [ ] **Step 7: Commit**
 
 ```bash
-cd frontend && npm run dev
+git add frontend/
+git commit -m "feat: initialize react with firebase auth and app check"
 ```
 
-預期：瀏覽器開啟 http://localhost:5173，頁面正常顯示（Vite 預設）。
+---
+
+## Task 4：Cloud Functions authentication + atomic token flow
+
+**Files:**
+- Create: `functions/package.json`
+- Create: `functions/src/memberIdentity.js`
+- Create: `functions/src/loginWithPin.js`
+- Create: `functions/src/reportToken.js`
+- Create: `functions/src/confirmToken.js`
+- Create: `functions/src/index.js`
+- Test: `functions/test/callables.test.js`
+
+- [ ] **Step 1: 建立 Functions package**
+
+```json
+{
+  "name": "dazhugong-functions",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "engines": { "node": "22" },
+  "scripts": {
+    "test": "firebase emulators:exec --config ../firebase.json --only auth,firestore --project demo-dazhugong \"node --test test/*.test.js\""
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^5.0.0"
+  },
+  "devDependencies": {
+    "firebase-functions-test": "^3.4.0",
+    "firebase-tools": "^14.0.0"
+  }
+}
+```
+
+Run: `npm --prefix functions install`
+
+- [ ] **Step 2: 建立 actor 映射 helper**
+
+`functions/src/memberIdentity.js`：
+
+```js
+const { HttpsError } = require('firebase-functions/v2/https');
+const admin = require('firebase-admin');
+
+function requireAuthentication(request) {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', '請先登入');
+  }
+  return request.auth.uid;
+}
+
+async function requireActorMember(request, groupId) {
+  const authUid = requireAuthentication(request);
+
+  const snapshot = await admin.firestore()
+    .collection('groups').doc(groupId)
+    .collection('members')
+    .where('authUid', '==', authUid)
+    .limit(2)
+    .get();
+
+  if (snapshot.size !== 1) {
+    throw new HttpsError('permission-denied', '登入身分未綁定成員');
+  }
+
+  const doc = snapshot.docs[0];
+  return { id: doc.id, ...doc.data() };
+}
+
+module.exports = { requireAuthentication, requireActorMember };
+```
+
+- [ ] **Step 3: 建立 `loginWithPin`**
+
+`functions/src/loginWithPin.js`：
+
+```js
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const admin = require('firebase-admin');
+const bcrypt = require('bcryptjs');
+
+const OPTIONS = { region: 'asia-east1', enforceAppCheck: true };
+const MAX_FAILURES = 5;
+const LOCK_MS = 15 * 60 * 1000;
+
+exports.loginWithPin = onCall(OPTIONS, async (request) => {
+  const { groupId, memberId, pin } = request.data || {};
+  if (!groupId || !memberId || !/^\d{4}$/.test(pin || '')) {
+    throw new HttpsError('invalid-argument', '請選擇成員並輸入 4 位 PIN');
+  }
+
+  const db = admin.firestore();
+  const memberRef = db.collection('groups').doc(groupId).collection('members').doc(memberId);
+  const authRef = db.collection('groups').doc(groupId).collection('memberAuth').doc(memberId);
+  const nowMs = Date.now();
+  let authUid;
+  let failureCode;
+
+  await db.runTransaction(async (transaction) => {
+    const memberSnap = await transaction.get(memberRef);
+    const authSnap = await transaction.get(authRef);
+    if (!memberSnap.exists || !authSnap.exists) {
+      failureCode = 'permission-denied';
+      return;
+    }
+
+    const authData = authSnap.data();
+    if (authData.lockedUntil?.toMillis() > nowMs) {
+      failureCode = 'resource-exhausted';
+      return;
+    }
+
+    const valid = await bcrypt.compare(pin, authData.pinHash);
+    if (!valid) {
+      const failedAttempts = (authData.failedAttempts || 0) + 1;
+      const shouldLock = failedAttempts >= MAX_FAILURES;
+      transaction.update(authRef, {
+        failedAttempts,
+        lastFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+        lockedUntil: shouldLock
+          ? admin.firestore.Timestamp.fromMillis(nowMs + LOCK_MS)
+          : null,
+      });
+      failureCode = shouldLock ? 'resource-exhausted' : 'permission-denied';
+      return;
+    }
+
+    authUid = memberSnap.data().authUid;
+    if (!authUid) {
+      failureCode = 'permission-denied';
+      return;
+    }
+    transaction.update(authRef, {
+      failedAttempts: 0,
+      lockedUntil: null,
+      lastSuccessfulAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  });
+
+  if (failureCode) {
+    const message = failureCode === 'resource-exhausted'
+      ? '嘗試次數過多，請稍後再試'
+      : '成員或 PIN 錯誤';
+    throw new HttpsError(failureCode, message);
+  }
+
+  return { customToken: await admin.auth().createCustomToken(authUid) };
+});
+```
+
+- [ ] **Step 4: 建立 authenticated `reportToken`**
+
+`functions/src/reportToken.js`：
+
+```js
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const admin = require('firebase-admin');
+const { requireAuthentication, requireActorMember } = require('./memberIdentity');
+
+exports.reportToken = onCall(
+  { region: 'asia-east1', enforceAppCheck: true },
+  async (request) => {
+    requireAuthentication(request);
+    const data = request.data || {};
+    const { groupId, targetId } = data;
+    if (!groupId) {
+      throw new HttpsError('invalid-argument', '缺少 groupId');
+    }
+
+    const actor = await requireActorMember(request, groupId);
+    if ('reporterId' in data || 'memberId' in data) {
+      throw new HttpsError('invalid-argument', 'caller identity 不可由 request.data 指定');
+    }
+    if (!targetId) {
+      throw new HttpsError('invalid-argument', '缺少 targetId');
+    }
+    if (actor.id === targetId) {
+      throw new HttpsError('invalid-argument', '不能舉報自己');
+    }
+
+    const db = admin.firestore();
+    const targetRef = db.collection('groups').doc(groupId).collection('members').doc(targetId);
+    if (!(await targetRef.get()).exists) {
+      throw new HttpsError('not-found', '被舉報成員不存在');
+    }
+
+    const tokenRef = db.collection('groups').doc(groupId).collection('tokens').doc();
+    await tokenRef.set({
+      reporterId: actor.id,
+      targetId,
+      status: 'pending',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      confirmedAt: null,
+      resolvedAt: null,
+    });
+    return { tokenId: tokenRef.id };
+  }
+);
+```
+
+- [ ] **Step 5: 建立 transaction-based `confirmToken`**
+
+`functions/src/confirmToken.js`：
+
+```js
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const admin = require('firebase-admin');
+const { requireAuthentication, requireActorMember } = require('./memberIdentity');
+
+exports.confirmToken = onCall(
+  { region: 'asia-east1', enforceAppCheck: true },
+  async (request) => {
+    requireAuthentication(request);
+    const data = request.data || {};
+    const { groupId, tokenId, action } = data;
+    if (!groupId) {
+      throw new HttpsError('invalid-argument', '缺少 groupId');
+    }
+
+    const actor = await requireActorMember(request, groupId);
+    if ('memberId' in data || 'reporterId' in data) {
+      throw new HttpsError('invalid-argument', 'caller identity 不可由 request.data 指定');
+    }
+    if (!tokenId || !['confirm', 'reject'].includes(action)) {
+      throw new HttpsError('invalid-argument', 'tokenId 或 action 錯誤');
+    }
+    const db = admin.firestore();
+    const groupRef = db.collection('groups').doc(groupId);
+    const tokenRef = groupRef.collection('tokens').doc(tokenId);
+
+    await db.runTransaction(async (transaction) => {
+      const tokenSnap = await transaction.get(tokenRef);
+      if (!tokenSnap.exists) throw new HttpsError('not-found', '舉報不存在');
+
+      const token = tokenSnap.data();
+      if (token.targetId !== actor.id) {
+        throw new HttpsError('permission-denied', '只有被舉報者可以處理');
+      }
+      if (token.status !== 'pending') {
+        throw new HttpsError('failed-precondition', '此舉報已處理');
+      }
+
+      if (action === 'reject') {
+        transaction.update(tokenRef, {
+          status: 'rejected',
+          resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return;
+      }
+
+      transaction.update(tokenRef, {
+        status: 'confirmed',
+        confirmedAt: admin.firestore.FieldValue.serverTimestamp(),
+        resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      transaction.set(groupRef.collection('reports').doc(tokenId), {
+        targetId: token.targetId,
+        reporterId: token.reporterId,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      transaction.update(groupRef.collection('members').doc(token.targetId), {
+        totalTokens: admin.firestore.FieldValue.increment(1),
+      });
+    });
+
+    return { success: true, status: action === 'confirm' ? 'confirmed' : 'rejected' };
+  }
+);
+```
+
+使用 `reports/{tokenId}` 而非 transaction callback 內產生隨機 ID，避免 transaction retry 留下不同 report ID。只有讀到 `pending` 的 transaction 能 commit。
+
+- [ ] **Step 6: 匯出 callable**
+
+`functions/src/index.js`：
+
+```js
+const admin = require('firebase-admin');
+admin.initializeApp();
+
+const { loginWithPin } = require('./loginWithPin');
+const { reportToken } = require('./reportToken');
+const { confirmToken } = require('./confirmToken');
+
+exports.loginWithPin = loginWithPin;
+exports.reportToken = reportToken;
+exports.confirmToken = confirmToken;
+```
+
+- [ ] **Step 7: 先寫 Emulator tests**
+
+`functions/test/callables.test.js` 使用 `node:test`、`firebase-functions-test`、Admin SDK 連 Firestore Emulator，並在每個 test seed `members`、`memberAuth`、`tokens`。以 `fft.wrap()` 呼叫 callable，context 一律帶 `{ app: { appId: 'test-web-app' } }`，authenticated case 再帶 `{ auth: { uid: '<authUid>' } }`。stub `admin.auth().createCustomToken(uid)` 回傳 `test-token:${uid}`。
+
+必須實作以下具名測試與 assertion：
+
+```text
+loginWithPin throttles on the fifth failure
+  first 4 wrong PIN calls => permission-denied
+  fifth wrong PIN => resource-exhausted
+  memberAuth.failedAttempts === 5
+  memberAuth.lockedUntil > now
+  correct PIN while locked => resource-exhausted
+
+loginWithPin returns the stable member auth UID
+  set lockedUntil to a past timestamp
+  correct PIN => customToken === test-token:dazhugong_main_member1
+  failedAttempts === 0 and lockedUntil === null
+
+reportToken rejects unauthenticated and spoofed identities
+  no auth => unauthenticated
+  reporterId/memberId in request.data => invalid-argument
+  auth UID member1 with target member2 => stored reporterId === member1
+
+confirmToken prevents impersonation
+  token target is member2, auth UID is member1 => permission-denied
+  adding memberId: member2 to data still cannot authorize the call
+
+confirmToken is concurrent and idempotent
+  Promise.allSettled(two confirm calls authenticated as member2)
+  exactly one fulfilled and one rejected with failed-precondition
+  token.status === confirmed
+  member2.totalTokens === 1
+  exactly one report exists at reports/{tokenId}
+```
+
+- [ ] **Step 8: 執行 Functions tests**
+
+```bash
+npm --prefix functions test
+```
+
+Expected:
+
+```text
+tests 5
+pass 5
+fail 0
+```
 
 - [ ] **Step 9: Commit**
 
 ```bash
-git add frontend/
-git commit -m "feat: initialize react vite project with tailwind, firebase, three.js"
+git add functions/
+git commit -m "feat: add authenticated callable token workflow"
 ```
 
 ---
 
-## Task 4：GitHub Actions CI/CD
-
-**Files:**
-- Create: `.github/workflows/deploy.yml`
-
-- [ ] **Step 1: 安裝 firebase-tools（本機一次性）**
-
-```bash
-npm install -g firebase-tools
-```
-
-- [ ] **Step 2: 建立 .github/workflows/deploy.yml**
-
-```yaml
-name: Deploy to Firebase
-
-on:
-  push:
-    branches: [main]
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Create frontend .env from secret
-        working-directory: frontend
-        run: |
-          echo '${{ secrets.FIREBASE_CONFIG }}' | node -e "
-            const c = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
-            const lines = [
-              'VITE_FIREBASE_API_KEY=' + c.apiKey,
-              'VITE_FIREBASE_AUTH_DOMAIN=' + c.authDomain,
-              'VITE_FIREBASE_PROJECT_ID=' + c.projectId,
-              'VITE_FIREBASE_STORAGE_BUCKET=' + c.storageBucket,
-              'VITE_FIREBASE_MESSAGING_SENDER_ID=' + c.messagingSenderId,
-              'VITE_FIREBASE_APP_ID=' + c.appId,
-            ];
-            require('fs').writeFileSync('.env', lines.join('\n'));
-          "
-
-      - name: Install and build frontend
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
-
-      - name: Install functions deps
-        working-directory: functions
-        run: npm ci
-
-      - name: Deploy to Firebase
-        run: |
-          npx firebase-tools deploy \
-            --only hosting,functions,firestore:rules \
-            --token "${{ secrets.FIREBASE_TOKEN }}" \
-            --project dazhugong-4f185 \
-            --non-interactive
-```
-
-- [ ] **Step 3: Commit 並 push 觸發 CI/CD**
-
-```bash
-git add .github/
-git commit -m "ci: add github actions firebase deploy workflow"
-git push origin main
-```
-
-前往 GitHub → Actions tab，確認 workflow 執行（初次可能因 Functions 尚未建立而有警告，繼續後面的 Task 即可解決）。
-
----
-
-## Task 5：Zustand 登入狀態
+## Task 5：Firebase Auth 衍生狀態（禁止 member persistence）
 
 **Files:**
 - Create: `frontend/src/store/authStore.js`
 
-- [ ] **Step 1: 建立 authStore.js**
+- [ ] **Step 1: 建立 auth observer store**
 
 ```js
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { collection, getDocs, limit, query, where } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 
-export const useAuthStore = create(
-  persist(
-    (set) => ({
-      currentMember: null,   // { id, name, avatar, color }
-      groupId: 'main',
-      login: (member) => set({ currentMember: member }),
-      logout: () => set({ currentMember: null }),
-    }),
-    { name: 'dazhugong-auth' }
-  )
-);
+export const useAuthStore = create((set) => ({
+  authReady: false,
+  firebaseUser: null,
+  currentMember: null,
+  groupId: 'main',
+  logout: () => signOut(auth),
+}));
+
+let unsubscribe;
+
+export function startAuthObserver() {
+  if (unsubscribe) return unsubscribe;
+  unsubscribe = onAuthStateChanged(auth, async (user) => {
+    if (!user) {
+      useAuthStore.setState({ authReady: true, firebaseUser: null, currentMember: null });
+      return;
+    }
+
+    const memberQuery = query(
+      collection(db, 'groups', 'main', 'members'),
+      where('authUid', '==', user.uid),
+      limit(2)
+    );
+    const snapshot = await getDocs(memberQuery);
+    if (snapshot.size !== 1) {
+      await signOut(auth);
+      useAuthStore.setState({ authReady: true, firebaseUser: null, currentMember: null });
+      return;
+    }
+
+    const memberDoc = snapshot.docs[0];
+    useAuthStore.setState({
+      authReady: true,
+      firebaseUser: user,
+      currentMember: { id: memberDoc.id, ...memberDoc.data() },
+    });
+  });
+  return unsubscribe;
+}
 ```
+
+不得使用 Zustand `persist`、`localStorage` 或接受任意 `login(member)`。Firebase Auth persistence 是唯一登入 persistence；`currentMember` 每次由已驗證的 `user.uid` 重新映射。
 
 - [ ] **Step 2: Commit**
 
 ```bash
-git add frontend/src/store/
-git commit -m "feat: add zustand auth store with localStorage persistence"
+git add frontend/src/store/authStore.js
+git commit -m "feat: derive member state from firebase authentication"
 ```
 
 ---
@@ -593,7 +936,7 @@ git commit -m "feat: add firestore realtime hooks for group, pending, and tokens
 
 ---
 
-## Task 7：Login 元件
+## Task 7：Login 元件（PIN → Firebase custom token）
 
 **Files:**
 - Create: `frontend/src/components/Login.jsx`
@@ -602,30 +945,32 @@ git commit -m "feat: add firestore realtime hooks for group, pending, and tokens
 
 ```jsx
 import { useState } from 'react';
+import { signInWithCustomToken } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { useGroup } from '../hooks/useGroup';
-import { useAuthStore } from '../store/authStore';
-import { functions } from '../firebase';
+import { auth, functions } from '../firebase';
 
 const AVATARS = { pig: '🐷', cat: '🐱', frog: '🐸', bear: '🐻', dog: '🐶' };
 
 export default function Login() {
   const { members } = useGroup('main');
-  const login = useAuthStore((s) => s.login);
   const [selected, setSelected] = useState(null);
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
 
   async function handleLogin() {
     if (!selected || pin.length !== 4) return;
-    // PIN 驗證交給 callable Cloud Function，前端不讀取 pinHash
-    const verifyMemberPin = httpsCallable(functions, 'verifyMemberPin');
-    const result = await verifyMemberPin({ groupId: 'main', memberId: selected.id, pin });
-
-    if (result.data?.ok) {
-      login({ id: selected.id, name: selected.name, avatar: selected.avatar, color: selected.color });
-    } else {
-      setError('PIN 錯誤，請再試一次');
+    setError('');
+    try {
+      const loginWithPin = httpsCallable(functions, 'loginWithPin');
+      const result = await loginWithPin({ groupId: 'main', memberId: selected.id, pin });
+      await signInWithCustomToken(auth, result.data.customToken);
+    } catch (error) {
+      setError(
+        error.code === 'functions/resource-exhausted'
+          ? '嘗試次數過多，請稍後再試'
+          : 'PIN 錯誤，請再試一次'
+      );
       setPin('');
     }
   }
@@ -688,12 +1033,12 @@ export default function Login() {
 
 ```bash
 git add frontend/src/components/Login.jsx
-git commit -m "feat: add login component with member selection and PIN verification"
+git commit -m "feat: sign in members with pin custom tokens"
 ```
 
 ---
 
-## Task 8：App 路由 + BottomNav
+## Task 8：Auth-aware App 路由 + BottomNav
 
 **Files:**
 - Create: `frontend/src/components/BottomNav.jsx`
@@ -784,8 +1129,10 @@ import Stats from './pages/Stats';
 import Settings from './pages/Settings';
 
 export default function App() {
+  const authReady = useAuthStore((s) => s.authReady);
   const currentMember = useAuthStore((s) => s.currentMember);
 
+  if (!authReady) return <div className="min-h-screen grid place-items-center">載入中…</div>;
   if (!currentMember) return <Login />;
 
   return (
@@ -814,6 +1161,9 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
+import { startAuthObserver } from './store/authStore';
+
+startAuthObserver();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
@@ -872,7 +1222,7 @@ export default function Settings() {
 cd frontend && npm run dev
 ```
 
-預期：登入頁出現 → 選成員 + 輸入 `1234` → 進入主畫面 → 底部導覽可切換頁面。
+預期：登入頁出現 → 選成員 + 輸入 `1234` → Firebase Auth user UID 等於 seed 的 `authUid` → 進入主畫面。重新整理後由 Firebase Auth 恢復，不依賴可竄改的 member localStorage。
 
 - [ ] **Step 7: Commit**
 
@@ -883,182 +1233,92 @@ git commit -m "feat: add router, bottom nav, member avatar, and page stubs"
 
 ---
 
-## Task 9：Cloud Functions — reportToken, confirmToken & verifyMemberPin
+## Task 9：GitHub Actions CI/CD（frontend + functions scaffold 完成後）
+
+**Depends on:** Task 3、Task 4、Task 8
 
 **Files:**
-- Create: `functions/package.json`
-- Create: `functions/src/index.js`
-- Create: `functions/src/reportToken.js`
-- Create: `functions/src/confirmToken.js`
-- Create: `functions/src/verifyMemberPin.js`
+- Create: `.github/workflows/deploy.yml`
 
-- [ ] **Step 1: 建立 functions/package.json**
+- [ ] **Step 1: 建立 workflow**
 
-```json
-{
-  "name": "dazhugong-functions",
-  "version": "1.0.0",
-  "main": "src/index.js",
-  "engines": { "node": "22" },
-  "dependencies": {
-    "firebase-admin": "^12.0.0",
-    "firebase-functions": "^5.0.0"
-  }
-}
+```yaml
+name: Deploy to Firebase
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test-build-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            functions/package-lock.json
+
+      - name: Install functions dependencies
+        run: npm --prefix functions ci
+
+      - name: Test authenticated functions
+        run: npm --prefix functions test
+
+      - name: Create frontend environment
+        run: |
+          echo '${{ secrets.FIREBASE_CONFIG }}' | node -e "
+            const c = JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8'));
+            const lines = [
+              'VITE_FIREBASE_API_KEY=' + c.apiKey,
+              'VITE_FIREBASE_AUTH_DOMAIN=' + c.authDomain,
+              'VITE_FIREBASE_PROJECT_ID=' + c.projectId,
+              'VITE_FIREBASE_STORAGE_BUCKET=' + c.storageBucket,
+              'VITE_FIREBASE_MESSAGING_SENDER_ID=' + c.messagingSenderId,
+              'VITE_FIREBASE_APP_ID=' + c.appId,
+              'VITE_FIREBASE_APPCHECK_SITE_KEY=' + c.appCheckSiteKey
+            ];
+            require('fs').writeFileSync('frontend/.env', lines.join('\n'));
+          "
+
+      - name: Install and build frontend
+        run: |
+          npm --prefix frontend ci
+          npm --prefix frontend run build
+
+      - name: Deploy
+        run: |
+          npx firebase-tools deploy \
+            --only hosting,functions,firestore:rules \
+            --token "${{ secrets.FIREBASE_TOKEN }}" \
+            --project dazhugong-4f185 \
+            --non-interactive
 ```
+
+- [ ] **Step 2: 設定 Secrets**
+
+`FIREBASE_CONFIG` JSON 必須包含 `appCheckSiteKey`；另設定 `FIREBASE_TOKEN`。此時 `frontend/package-lock.json` 與 `functions/package-lock.json` 已存在，所以 cache、`npm ci`、tests、build 都不得因尚未 scaffold 的 package 失敗。
+
+- [ ] **Step 3: 本機重現 CI**
 
 ```bash
-cd functions && npm install
+npm --prefix functions ci
+npm --prefix functions test
+npm --prefix frontend ci
+npm --prefix frontend run build
 ```
 
-- [ ] **Step 2: 建立 functions/src/reportToken.js**
+Expected: functions tests 5/5 pass；frontend build exit 0。
 
-```js
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
-const admin = require('firebase-admin');
-
-exports.reportToken = onCall({ region: 'asia-east1' }, async (request) => {
-  const { groupId, reporterId, targetId } = request.data;
-
-  if (!groupId || !reporterId || !targetId) {
-    throw new HttpsError('invalid-argument', '缺少必要參數');
-  }
-  if (reporterId === targetId) {
-    throw new HttpsError('invalid-argument', '不能舉報自己');
-  }
-
-  const db = admin.firestore();
-  const tokenRef = db.collection('groups').doc(groupId).collection('tokens').doc();
-
-  await tokenRef.set({
-    reporterId,
-    targetId,
-    status: 'pending',
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    confirmedAt: null,
-  });
-
-  return { tokenId: tokenRef.id };
-});
-```
-
-- [ ] **Step 3: 建立 functions/src/confirmToken.js**
-
-```js
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
-const admin = require('firebase-admin');
-
-exports.confirmToken = onCall({ region: 'asia-east1' }, async (request) => {
-  const { groupId, tokenId, action, memberId } = request.data;
-
-  if (!['confirm', 'reject'].includes(action)) {
-    throw new HttpsError('invalid-argument', 'action 必須是 confirm 或 reject');
-  }
-
-  const db = admin.firestore();
-  const tokenRef = db.collection('groups').doc(groupId).collection('tokens').doc(tokenId);
-  const tokenSnap = await tokenRef.get();
-
-  if (!tokenSnap.exists) {
-    throw new HttpsError('not-found', '舉報不存在');
-  }
-
-  const token = tokenSnap.data();
-
-  if (token.targetId !== memberId) {
-    throw new HttpsError('permission-denied', '只有被舉報者可以確認');
-  }
-  if (token.status !== 'pending') {
-    throw new HttpsError('failed-precondition', '此舉報已處理');
-  }
-
-  const batch = db.batch();
-
-  if (action === 'confirm') {
-    batch.update(tokenRef, {
-      status: 'confirmed',
-      confirmedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
-    const reportRef = db.collection('groups').doc(groupId).collection('reports').doc();
-    batch.set(reportRef, {
-      targetId: token.targetId,
-      reporterId: token.reporterId,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
-    const memberRef = db.collection('groups').doc(groupId).collection('members').doc(token.targetId);
-    batch.update(memberRef, {
-      totalTokens: admin.firestore.FieldValue.increment(1),
-    });
-  } else {
-    batch.update(tokenRef, { status: 'rejected' });
-  }
-
-  await batch.commit();
-  return { success: true };
-});
-```
-
-- [ ] **Step 4: 建立 functions/src/verifyMemberPin.js**
-
-```js
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
-const admin = require('firebase-admin');
-const crypto = require('crypto');
-
-function hashPin(pin) {
-  return crypto.createHash('sha256').update(pin).digest('hex');
-}
-
-exports.verifyMemberPin = onCall({ region: 'asia-east1' }, async (request) => {
-  const { groupId, memberId, pin } = request.data;
-
-  if (!groupId || !memberId || !pin) {
-    throw new HttpsError('invalid-argument', '缺少必要參數');
-  }
-
-  const authSnap = await admin.firestore()
-    .collection('groups').doc(groupId)
-    .collection('memberAuth').doc(memberId)
-    .get();
-
-  if (!authSnap.exists) {
-    throw new HttpsError('not-found', '成員不存在');
-  }
-
-  return { ok: authSnap.data().pinHash === hashPin(pin) };
-});
-```
-
-- [ ] **Step 5: 建立 functions/src/index.js**
-
-```js
-const admin = require('firebase-admin');
-admin.initializeApp();
-
-const { reportToken } = require('./reportToken');
-const { confirmToken } = require('./confirmToken');
-const { verifyMemberPin } = require('./verifyMemberPin');
-
-exports.reportToken = reportToken;
-exports.confirmToken = confirmToken;
-exports.verifyMemberPin = verifyMemberPin;
-```
-
-- [ ] **Step 6: 部署 Functions**
+- [ ] **Step 4: Commit**
 
 ```bash
-npx firebase-tools deploy --only functions --project dazhugong-4f185
-```
-
-預期：Firebase Console → Functions 出現 `reportToken`、`confirmToken` 和 `verifyMemberPin` 三個函數。
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add functions/
-git commit -m "feat: add cloud functions for report and confirm token with atomic batch write"
+git add .github/workflows/deploy.yml
+git commit -m "ci: test and deploy frontend and authenticated functions"
 ```
 
 ---
@@ -1092,7 +1352,7 @@ export default function Vote() {
     setLoading(true);
     try {
       const reportToken = httpsCallable(functions, 'reportToken');
-      await reportToken({ groupId: 'main', reporterId: currentMember.id, targetId: selected.id });
+      await reportToken({ groupId: 'main', targetId: selected.id });
       setDone(true);
     } catch (e) {
       alert('舉報失敗：' + (e.message || '請稍後再試'));
@@ -1157,7 +1417,8 @@ export default function Vote() {
 3. 前往投票頁，選 Kevin
 4. 點舉報按鈕
 5. 前往 Firebase Console → Firestore → groups/main/tokens
-   預期：出現一筆 status: "pending", targetId: "member2" 的文件
+   預期：出現一筆 status: "pending", targetId: "member2", reporterId: "member1" 的文件；
+   request 未傳 reporterId，值必須來自登入者的 request.auth.uid 映射。
 ```
 
 - [ ] **Step 3: Commit**
@@ -1225,7 +1486,7 @@ export default function Pending() {
   async function handleAction(tokenId, action) {
     try {
       const confirmToken = httpsCallable(functions, 'confirmToken');
-      await confirmToken({ groupId: 'main', tokenId, action, memberId: currentMember.id });
+      await confirmToken({ groupId: 'main', tokenId, action });
     } catch (e) {
       alert('操作失敗：' + (e.message || '請稍後再試'));
     }
@@ -1896,44 +2157,70 @@ git commit -m "feat: implement settings page with member list and logout"
 前往 GitHub Repo → Settings → Secrets and variables → Actions，確認：
 ```
 ✅ FIREBASE_TOKEN（重新產生的，非洩漏的那個）
-✅ FIREBASE_CONFIG（JSON 格式）
+✅ FIREBASE_CONFIG（JSON 格式，包含 appCheckSiteKey）
 ```
 
-- [ ] **Step 2: Push main 觸發完整 CI/CD**
+- [ ] **Step 2: 部署前執行 auth/concurrency validation**
+
+```bash
+npm --prefix functions test
+```
+
+Expected:
+
+```text
+tests 5
+pass 5
+fail 0
+```
+
+這 5 個 tests 必須涵蓋：第 5 次錯誤 PIN 鎖定且正確 PIN 仍被拒、未登入拒絕、caller identity 欄位不能冒用、非 target 不能確認、兩個並行確認只成功一次且 `totalTokens === 1`。
+
+- [ ] **Step 3: Push main 觸發完整 CI/CD**
 
 ```bash
 git push origin main
 ```
 
-- [ ] **Step 3: 確認 GitHub Actions 成功**
+- [ ] **Step 4: 確認 GitHub Actions 成功**
 
 前往 GitHub → Actions → 最新的 `Deploy to Firebase` workflow → 確認所有 steps 綠色。
 
-- [ ] **Step 4: 開啟正式網址**
+- [ ] **Step 5: 啟用並確認 App Check enforcement**
+
+Firebase Console → App Check → Functions：
+- Web App 使用 reCAPTCHA Enterprise site key。
+- `loginWithPin`、`reportToken`、`confirmToken` metrics 有合法請求。
+- Functions enforcement 為 **Enforced**；未帶 App Check token 的 callable 預期被拒。
+
+- [ ] **Step 6: 開啟正式網址**
 
 ```
 https://dazhugong-4f185.web.app
 ```
 
-- [ ] **Step 5: 完整驗收清單**
+- [ ] **Step 7: 完整驗收清單**
 
 ```
 □ 登入頁顯示 5 位成員頭像
-□ 選成員 + 輸入 1234 → 成功進入主畫面
+□ 選成員 + 輸入 1234 → Firebase Auth UID 等於該 member.authUid
+□ 重新整理後由 Firebase Auth 恢復登入，localStorage 沒有可指定 member 身分的資料
+□ 連續 5 次錯誤 PIN 後鎖定，鎖定期間正確 PIN 也不能登入
 □ 主畫面顯示 3D 玻璃豬公
 □ 手機滑動可旋轉豬公
 □ 點「投入 Token」→ 選成員 → 送出舉報
+□ token.reporterId 由登入 UID 映射產生，前端 request 不傳 reporterId
 □ 切換到被舉報帳號 → 看到紅色通知橫幅
 □ 進入待確認頁 → 點「我認了」
-□ 主畫面 Token 數即時增加
+□ 重複/並行確認只有一次成功，主畫面 Token 數只增加 1
 □ 3D 豬公內球增加
 □ 歷史紀錄顯示此次違規
 □ 統計頁圓餅圖正確顯示
 □ 設定頁成員排行正確
-□ 登出/切換帳號正常
+□ 登出使用 Firebase signOut，切換帳號正常
 ```
 
-- [ ] **Step 6: 標記 v1.0.0**
+- [ ] **Step 8: 標記 v1.0.0**
 
 ```bash
 git tag v1.0.0
