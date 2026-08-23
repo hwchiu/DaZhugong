@@ -8,8 +8,8 @@ function readJson(filePath) {
   return fs.readFile(filePath, 'utf8').then((content) => JSON.parse(content));
 }
 
-function nonEmptyString(value) {
-  return typeof value === 'string' && value.trim().length > 0;
+function normalizeMemberText(value) {
+  return typeof value === 'string' ? value.trim() : '';
 }
 
 function validateMemberConfig(member, index = 0, seen = { ids: new Set(), authUids: new Set(), pins: new Set() }) {
@@ -18,48 +18,54 @@ function validateMemberConfig(member, index = 0, seen = { ids: new Set(), authUi
   }
 
   const { id, authUid, name, avatar, color, pin } = member;
+  const normalizedId = normalizeMemberText(id);
+  const normalizedAuthUid = normalizeMemberText(authUid);
+  const normalizedName = normalizeMemberText(name);
+  const normalizedAvatar = normalizeMemberText(avatar);
+  const normalizedColor = normalizeMemberText(color);
+  const normalizedPin = String(pin);
 
-  if (!nonEmptyString(id)) {
+  if (!normalizedId) {
     throw new Error(`Member ${index + 1} id must be a non-empty string.`);
   }
-  if (seen.ids.has(id)) {
-    throw new Error(`Member id must be unique: ${id}.`);
+  if (seen.ids.has(normalizedId)) {
+    throw new Error(`Member ${normalizedId} id must be unique.`);
   }
-  seen.ids.add(id);
+  seen.ids.add(normalizedId);
 
-  if (!nonEmptyString(authUid) || authUid.trim().length > 128) {
-    throw new Error(`Member ${id} authUid must be a non-empty string up to 128 characters.`);
+  if (!normalizedAuthUid || normalizedAuthUid.length > 128) {
+    throw new Error(`Member ${normalizedId} authUid must be a non-empty string up to 128 characters.`);
   }
-  if (seen.authUids.has(authUid)) {
-    throw new Error(`Member authUid must be unique: ${authUid}.`);
+  if (seen.authUids.has(normalizedAuthUid)) {
+    throw new Error(`Member ${normalizedId} authUid must be unique.`);
   }
-  seen.authUids.add(authUid);
+  seen.authUids.add(normalizedAuthUid);
 
-  if (!nonEmptyString(name)) {
-    throw new Error(`Member ${id} name must be a non-empty string.`);
+  if (!normalizedName) {
+    throw new Error(`Member ${normalizedId} name must be a non-empty string.`);
   }
-  if (!nonEmptyString(avatar)) {
-    throw new Error(`Member ${id} avatar must be a non-empty string.`);
+  if (!normalizedAvatar) {
+    throw new Error(`Member ${normalizedId} avatar must be a non-empty string.`);
   }
-  if (!nonEmptyString(color)) {
-    throw new Error(`Member ${id} color must be a non-empty string.`);
+  if (!normalizedColor) {
+    throw new Error(`Member ${normalizedId} color must be a non-empty string.`);
   }
 
-  if (!/^\d{4}$/.test(String(pin || ''))) {
-    throw new Error(`Member ${id} pin must be exactly 4 digits.`);
+  if (!/^\d{4}$/.test(normalizedPin)) {
+    throw new Error(`Member ${normalizedId} pin must be exactly 4 ASCII digits.`);
   }
-  if (seen.pins.has(pin)) {
-    throw new Error(`Member pin must be unique: ${pin}.`);
+  if (seen.pins.has(normalizedPin)) {
+    throw new Error(`Member ${normalizedId} pin must be unique.`);
   }
-  seen.pins.add(pin);
+  seen.pins.add(normalizedPin);
 
   return {
-    id: id.trim(),
-    authUid: authUid.trim(),
-    name: name.trim(),
-    avatar: avatar.trim(),
-    color: color.trim(),
-    pin: String(pin),
+    id: normalizedId,
+    authUid: normalizedAuthUid,
+    name: normalizedName,
+    avatar: normalizedAvatar,
+    color: normalizedColor,
+    pin: normalizedPin,
   };
 }
 
@@ -176,7 +182,9 @@ if (require.main === module) {
   seed().then(({ groupId, memberCount }) => {
     console.log(`Seeded ${memberCount} members in groups/${groupId}.`);
   }).catch((error) => {
-    console.error(error.message);
+    console.error(error && typeof error.message === 'string' && /^((Seed config|Member)\b)/.test(error.message)
+      ? error.message
+      : 'Failed to seed members.');
     process.exitCode = 1;
   });
 }
