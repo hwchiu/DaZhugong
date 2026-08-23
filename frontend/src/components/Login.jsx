@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { signInWithCustomToken } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { useGroup } from '../hooks/useGroup.js';
 import { auth, functions } from '../firebase.js';
+import { useAuthStore } from '../store/authStore.js';
 
 const GROUP_ID = 'main';
 const THROTTLED_ERROR_MESSAGE = '嘗試次數過多，請稍後再試。';
@@ -45,21 +46,31 @@ function getSelectedCardStyle(member) {
 
 export default function Login() {
   const { members, loading: membersLoading, error: membersError } = useGroup(GROUP_ID);
+  const authError = useAuthStore((state) => state.authError);
+  const clearAuthError = useAuthStore((state) => state.clearAuthError);
   const [selectedMember, setSelectedMember] = useState(null);
   const [pendingMember, setPendingMember] = useState(null);
   const [pin, setPin] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [hasDismissedAuthError, setHasDismissedAuthError] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const isInteractionLocked = membersLoading || membersError || isLoggingIn;
   const visibleSelectedMemberId = (pendingMember ?? selectedMember)?.id;
   const canSubmit = Boolean(selectedMember) && pin.length === 4 && !membersLoading && !membersError && !isLoggingIn;
+  const visibleAuthError = hasDismissedAuthError ? '' : authError;
+
+  useEffect(() => {
+    setHasDismissedAuthError(false);
+  }, [authError]);
 
   function handleSelectMember(member) {
     if (isInteractionLocked) {
       return;
     }
 
+    setHasDismissedAuthError(true);
+    clearAuthError?.();
     setSelectedMember(member);
     setPin('');
     setErrorMessage('');
@@ -70,6 +81,8 @@ export default function Login() {
       return;
     }
 
+    setHasDismissedAuthError(true);
+    clearAuthError?.();
     setPin(sanitizePin(event.target.value));
     setErrorMessage('');
   }
@@ -173,6 +186,12 @@ export default function Login() {
             </div>
           ) : null}
         </div>
+
+        {visibleAuthError ? (
+          <p role="alert" className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            {visibleAuthError}
+          </p>
+        ) : null}
 
         <form className="mt-5 space-y-4" onSubmit={handleSubmit}>
           <div>

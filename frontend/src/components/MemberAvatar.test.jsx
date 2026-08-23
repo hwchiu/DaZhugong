@@ -36,7 +36,7 @@ describe('MemberAvatar', () => {
     render(<MemberAvatar member={member} size="sm" />);
 
     expect(screen.queryByRole('button', { name: 'Kevin' })).toBe(null);
-    const avatar = screen.getByLabelText('Kevin');
+    const avatar = screen.getByRole('img', { name: 'Kevin' });
     expect(avatar.getAttribute('title')).toBe('Kevin');
     expect(avatar.textContent).toContain('🐱');
     expect(screen.queryByText('Kevin')).toBe(null);

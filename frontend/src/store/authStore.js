@@ -182,12 +182,17 @@ export async function logout() {
   return signOut(auth);
 }
 
+export function clearAuthError() {
+  useAuthStore.setState({ authError: null });
+}
+
 export const useAuthStore = create(() => ({
   authReady: false,
   firebaseUser: null,
   currentMember: null,
   groupId: 'main',
   authError: null,
+  clearAuthError,
   logout,
 }));
 

@@ -65,7 +65,7 @@ export default function MemberAvatar({ member, size = 'md', selected = false, on
   }
 
   return (
-    <div aria-label={memberName} title={memberName} className={className} style={getAvatarStyle(member, selected)}>
+    <div role="img" aria-label={memberName} title={memberName} className={className} style={getAvatarStyle(member, selected)}>
       {content}
     </div>
   );

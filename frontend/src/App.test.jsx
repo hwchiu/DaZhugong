@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -30,6 +30,7 @@ function renderAppAt(pathname, nextAuthState) {
 
 afterEach(() => {
   cleanup();
+  document.title = '';
   window.history.pushState({}, '', '/');
 });
 
@@ -62,6 +63,21 @@ describe('App', () => {
     expect(screen.getByRole('link', { name: '首頁' }).getAttribute('aria-current')).toBe('page');
   });
 
+  it('uses accessible inactive and active bottom-nav states', () => {
+    renderAppAt('/history', {
+      authReady: true,
+      currentMember: { id: 'member-1', name: '你' },
+    });
+
+    const historyLink = screen.getByRole('link', { name: '歷史紀錄' });
+    const homeLink = screen.getByRole('link', { name: '首頁' });
+
+    expect(historyLink.getAttribute('aria-current')).toBe('page');
+    expect(historyLink.className).toContain('text-pink-600');
+    expect(homeLink.getAttribute('aria-current')).toBe(null);
+    expect(homeLink.className).toContain('text-slate-600');
+  });
+
   it('renders the pending route without forcing a bottom-nav tab active', () => {
     renderAppAt('/pending', {
       authReady: true,
@@ -86,5 +102,26 @@ describe('App', () => {
 
     expect(screen.getByRole('heading', { name: '設定' })).toBeTruthy();
     expect(screen.getByRole('link', { name: '設定' }).getAttribute('aria-current')).toBe('page');
+  });
+
+  it('updates the route title, focuses the shell main region, and announces authenticated route changes', async () => {
+    const user = userEvent.setup();
+    renderAppAt('/history', {
+      authReady: true,
+      currentMember: { id: 'member-1', name: '你' },
+    });
+
+    const mainRegion = screen.getByRole('main', { name: '主要內容' });
+
+    await waitFor(() => expect(document.title).toBe('歷史紀錄 · 大豬公'));
+    expect(document.activeElement).not.toBe(mainRegion);
+    expect(screen.getByRole('status').textContent).toBe('');
+
+    await user.click(screen.getByRole('link', { name: '設定' }));
+
+    await waitFor(() => expect(document.title).toBe('設定 · 大豬公'));
+    await waitFor(() => expect(document.activeElement).toBe(mainRegion));
+    expect(screen.getByRole('status').textContent).toContain('已切換至設定');
+    expect(screen.getByRole('status').className).toContain('sr-only');
   });
 });

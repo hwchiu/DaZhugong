@@ -13,6 +13,12 @@ const firebaseState = vi.hoisted(() => ({
   signInWithCustomToken: vi.fn(),
 }));
 
+const authStoreState = vi.hoisted(() => ({
+  authError: null,
+  clearAuthError: vi.fn(),
+  useAuthStore: vi.fn(),
+}));
+
 vi.mock('../hooks/useGroup.js', () => ({
   useGroup: useGroupMock.useGroup,
 }));
@@ -20,6 +26,10 @@ vi.mock('../hooks/useGroup.js', () => ({
 vi.mock('../firebase.js', () => ({
   auth: firebaseState.auth,
   functions: firebaseState.functions,
+}));
+
+vi.mock('../store/authStore.js', () => ({
+  useAuthStore: authStoreState.useAuthStore,
 }));
 
 vi.mock('firebase/auth', () => ({
@@ -39,6 +49,7 @@ function renderLogin({
   ],
   loading = false,
   error = null,
+  authError = null,
 } = {}) {
   useGroupMock.useGroup.mockReturnValue({
     group: { id: 'main', name: '大豬公' },
@@ -46,6 +57,7 @@ function renderLogin({
     loading,
     error,
   });
+  authStoreState.authError = authError;
 
   return render(<Login />);
 }
@@ -66,6 +78,14 @@ beforeEach(() => {
   useGroupMock.useGroup.mockReset();
   firebaseState.loginCallable = vi.fn();
   firebaseState.signInWithCustomToken.mockReset();
+  authStoreState.authError = null;
+  authStoreState.clearAuthError = vi.fn();
+  authStoreState.useAuthStore.mockImplementation((selector) =>
+    selector({
+      authError: authStoreState.authError,
+      clearAuthError: authStoreState.clearAuthError,
+    }),
+  );
 });
 
 afterEach(() => {
@@ -166,6 +186,31 @@ describe('Login', () => {
 
     expect(screen.getByLabelText('PIN 碼').value).toBe('');
     expect(screen.queryByRole('alert')).toBe(null);
+  });
+
+  it('shows the signed-out auth error as an alert and clears it independently from PIN errors', async () => {
+    const user = userEvent.setup();
+    firebaseState.loginCallable.mockRejectedValue({
+      code: 'functions/permission-denied',
+      message: 'pinHash comparison failed for member-1',
+    });
+
+    renderLogin({ authError: 'Unable to verify your account access right now.' });
+
+    expect(screen.getByRole('alert').textContent).toContain('Unable to verify your account access right now.');
+
+    await user.click(screen.getByRole('button', { name: '選擇成員 你' }));
+
+    expect(authStoreState.clearAuthError).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Unable to verify your account access right now.')).toBe(null);
+
+    await user.type(screen.getByLabelText('PIN 碼'), '9999');
+    await user.click(screen.getByRole('button', { name: '登入' }));
+
+    const alerts = await screen.findAllByRole('alert');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].textContent).toContain('登入失敗');
+    expect(alerts[0].textContent).not.toContain('Unable to verify your account access right now.');
   });
 
   it('submits the selected member PIN and signs in with the custom token on enter', async () => {

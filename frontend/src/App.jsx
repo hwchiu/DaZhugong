@@ -1,4 +1,5 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import Login from './components/Login.jsx';
 import BottomNav from './components/BottomNav.jsx';
 import Home from './pages/Home.jsx';
@@ -9,9 +10,47 @@ import Stats from './pages/Stats.jsx';
 import Settings from './pages/Settings.jsx';
 import { useAuthStore } from './store/authStore.js';
 
+const AUTHENTICATED_ROUTE_LABELS = {
+  '/': '首頁',
+  '/vote': '投票',
+  '/pending': '待確認',
+  '/history': '歷史紀錄',
+  '/stats': '統計',
+  '/settings': '設定',
+};
+
 function AppContent() {
   const authReady = useAuthStore((state) => state.authReady);
   const currentMember = useAuthStore((state) => state.currentMember);
+  const location = useLocation();
+  const mainContentRef = useRef(null);
+  const previousPathRef = useRef(null);
+  const [routeAnnouncement, setRouteAnnouncement] = useState('');
+
+  useEffect(() => {
+    if (!currentMember) {
+      previousPathRef.current = null;
+      setRouteAnnouncement('');
+      return;
+    }
+
+    const pageLabel = AUTHENTICATED_ROUTE_LABELS[location.pathname];
+
+    if (!pageLabel) {
+      return;
+    }
+
+    document.title = `${pageLabel} · 大豬公`;
+
+    if (previousPathRef.current === null) {
+      previousPathRef.current = location.pathname;
+      return;
+    }
+
+    previousPathRef.current = location.pathname;
+    setRouteAnnouncement(`已切換至${pageLabel}`);
+    mainContentRef.current?.focus();
+  }, [currentMember, location.pathname]);
 
   if (!authReady) {
     return (
@@ -40,15 +79,20 @@ function AppContent() {
         style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 5.5rem)' }}
       >
         <div className="flex-1">
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/vote" element={<Vote />} />
-            <Route path="/pending" element={<Pending />} />
-            <Route path="/history" element={<History />} />
-            <Route path="/stats" element={<Stats />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<Navigate replace to="/" />} />
-          </Routes>
+          <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+            {routeAnnouncement}
+          </p>
+          <main ref={mainContentRef} tabIndex={-1} aria-label="主要內容" className="flex-1 outline-none">
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/vote" element={<Vote />} />
+              <Route path="/pending" element={<Pending />} />
+              <Route path="/history" element={<History />} />
+              <Route path="/stats" element={<Stats />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="*" element={<Navigate replace to="/" />} />
+            </Routes>
+          </main>
         </div>
         <BottomNav />
       </div>
