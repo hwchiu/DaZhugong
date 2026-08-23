@@ -206,7 +206,7 @@ export default function Home() {
     const now = new Date();
     const hour = now.getHours();
     return hour === 12;
-  }, [simulateLunch]);
+  }, [simulateLunch, currentTimeStr]);
 
   const memberSummary = useMemo(
     () => buildMemberSummary(members, currentMember?.id ?? null),
@@ -262,8 +262,7 @@ export default function Home() {
       setIsDepositingAnim(true);
     } catch (err) {
       console.error('Failed to report token:', err);
-      setDepositStep('animating');
-      setIsDepositingAnim(true);
+      setDepositStep('error');
     } finally {
       setSubmittingToken(false);
     }
@@ -791,6 +790,33 @@ export default function Home() {
                 >
                   關閉
                 </button>
+              </div>
+            )}
+
+            {/* Step 5: Error Screen */}
+            {depositStep === 'error' && (
+              <div>
+                <span className="text-5xl block mb-3">⚠️</span>
+                <h3 className="text-lg font-black text-slate-950">投入失敗</h3>
+                <p className="text-xs text-slate-600 leading-relaxed mt-3 px-4 font-semibold">
+                  無法與伺服器連線或同步資料，請確認您的網路連線後再試。
+                </p>
+                <div className="flex gap-3 mt-6">
+                  <button
+                    type="button"
+                    onClick={() => setDepositStep('confirm')}
+                    className="flex-1 bg-slate-100 text-slate-600 hover:bg-slate-200 py-3 rounded-2xl text-xs font-bold transition"
+                  >
+                    重試
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCloseModal}
+                    className="flex-1 bg-slate-900 text-white hover:bg-slate-800 py-3 rounded-2xl text-xs font-bold transition"
+                  >
+                    關閉
+                  </button>
+                </div>
               </div>
             )}
           </div>

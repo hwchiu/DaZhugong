@@ -242,7 +242,7 @@ export default function PiggyBank3D({
             {Array.from({ length: 12 }).map((_, idx) => {
               const leftPercent = (idx * 9) + 5;
               const delay = (idx * 0.15).toFixed(2);
-              const duration = (0.8 + Math.random() * 0.5).toFixed(2);
+              const duration = (0.8 + ((idx * 7) % 5) * 0.1).toFixed(2);
               return (
                 <div
                   key={idx}
@@ -266,8 +266,8 @@ export default function PiggyBank3D({
         return (
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
             {Array.from({ length: 10 }).map((_, idx) => {
-              const leftPercent = Math.floor(Math.random() * 90) + 5;
-              const topPercent = Math.floor(Math.random() * 40) + 5;
+              const leftPercent = ((idx * 9 + 7) % 90) + 5;
+              const topPercent = ((idx * 13 + 3) % 40) + 5;
               const delay = (idx * 0.3).toFixed(2);
               return (
                 <div
