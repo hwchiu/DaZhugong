@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import piggyBankPng from './gemini-piggy-bank.png';
 
 const MAX_RENDERED_TOKENS = 80;
@@ -9,6 +9,7 @@ function toTokenCount(value) {
   if (!Number.isFinite(value) || value <= 0) {
     return 0;
   }
+
   return Math.floor(value);
 }
 
@@ -67,296 +68,359 @@ function prefersReducedMotion() {
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-// 6 dynamic Mood states
-function getPigMood(count) {
-  if (count >= 50) {
-    return { key: 'laughing', emoji: '😍', label: '超開心', desc: '大笑', tip: '「哇！好多罰金！我們可以去吃大餐了！🥳」' };
-  } else if (count >= 30) {
-    return { key: 'smiling', emoji: '😊', label: '心情很好', desc: '微笑', tip: '「心情很好，繼續保持！大家今天很自律喔！」' };
-  } else if (count >= 20) {
-    return { key: 'neutral', emoji: '😐', label: '普通', desc: '平靜', tip: '「大家今天聊不少公事喔...」罰金準備可以拿去吃大餐了！' };
-  } else if (count >= 10) {
-    return { key: 'worried', emoji: '😟', label: '有點擔心', desc: '皺眉', tip: '「有點擔心，大家是不是太累了？要多休息喔！」' };
-  } else if (count >= 3) {
-    return { key: 'stressed', emoji: '😫', label: '壓力很大', desc: '累', tip: '「壓力很大，公事聊太多啦！罰款箱要爆了！」' };
-  } else {
-    return { key: 'crying', emoji: '😭', label: '爆量', desc: '哭泣', tip: '「嗚嗚... 爆量啦！午餐時間不准再講工作了！」' };
-  }
-}
+function StaticPig({ totalCount, renderedCount, reducedMotion }) {
+  const label = `小豬撲滿，內含 ${totalCount} Token，畫面顯示 ${renderedCount} 個代表物件`;
 
-function PigFace({ mood }) {
   return (
-    <svg viewBox="0 0 100 60" className="w-full h-full text-slate-700">
-      {/* Blush cheeks */}
-      {(mood === 'laughing' || mood === 'smiling') && (
-        <>
-          <ellipse cx="15" cy="38" rx="8" ry="5" fill="#fda4af" opacity="0.65" />
-          <ellipse cx="85" cy="38" rx="8" ry="5" fill="#fda4af" opacity="0.65" />
-        </>
-      )}
-      {mood === 'stressed' && (
-        <>
-          <ellipse cx="15" cy="38" rx="6" ry="4" fill="#fda4af" opacity="0.4" />
-          <ellipse cx="85" cy="38" rx="6" ry="4" fill="#fda4af" opacity="0.4" />
-        </>
-      )}
-
-      {/* Eyes */}
-      {mood === 'laughing' && (
-        <>
-          <path d="M10 25 Q20 15 30 25" fill="none" stroke="currentColor" strokeWidth="4.5" strokeLinecap="round" />
-          <path d="M70 25 Q80 15 90 25" fill="none" stroke="currentColor" strokeWidth="4.5" strokeLinecap="round" />
-        </>
-      )}
-      {mood === 'smiling' && (
-        <>
-          <path d="M12 24 Q20 18 28 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" />
-          <path d="M72 24 Q80 18 88 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" />
-        </>
-      )}
-      {mood === 'neutral' && (
-        <>
-          <circle cx="20" cy="24" r="4.5" fill="currentColor" />
-          <circle cx="80" cy="24" r="4.5" fill="currentColor" />
-        </>
-      )}
-      {mood === 'worried' && (
-        <>
-          <circle cx="20" cy="26" r="5" fill="currentColor" />
-          <circle cx="80" cy="26" r="5" fill="currentColor" />
-          <path d="M12 16 L26 20" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" />
-          <path d="M88 16 L74 20" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" />
-        </>
-      )}
-      {mood === 'stressed' && (
-        <>
-          <path d="M12 20 L24 28 M24 20 L12 28" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" />
-          <path d="M76 20 L88 28 M88 20 L76 28" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" />
-        </>
-      )}
-      {mood === 'crying' && (
-        <>
-          <path d="M12 26 Q20 32 28 26" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" />
-          <path d="M72 26 Q80 32 88 26" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" />
-          <path d="M18 30 Q18 45 16 48" fill="none" stroke="#0ea5e9" strokeWidth="4.5" strokeLinecap="round" />
-          <path d="M82 30 Q82 45 84 48" fill="none" stroke="#0ea5e9" strokeWidth="4.5" strokeLinecap="round" />
-        </>
-      )}
-
-      {/* Mouth */}
-      {mood === 'laughing' && (
-        <path d="M38 38 Q50 54 62 38 Z" fill="currentColor" />
-      )}
-      {mood === 'smiling' && (
-        <path d="M40 38 Q50 48 60 38" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" />
-      )}
-      {mood === 'neutral' && (
-        <path d="M40 42 L60 42" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" />
-      )}
-      {mood === 'worried' && (
-        <path d="M40 44 Q50 38 60 44" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" />
-      )}
-      {mood === 'stressed' && (
-        <path d="M40 45 Q50 39 60 45" fill="none" stroke="currentColor" strokeWidth="4.5" strokeLinecap="round" />
-      )}
-      {mood === 'crying' && (
-        <path d="M38 46 Q50 35 62 46" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
-      )}
-    </svg>
+    <div className="flex h-full min-h-64 flex-col items-center justify-center px-4 text-center">
+      <div role="img" aria-label={label} className="w-full max-w-56">
+        <svg viewBox="0 0 240 190" className="h-auto w-full" aria-hidden="true">
+          <image href={piggyBankPng} x="25" y="0" width="190" height="190" preserveAspectRatio="xMidYMid meet" />
+        </svg>
+      </div>
+      <p className="mt-2 text-sm font-semibold text-slate-900">
+        WebGL 無法使用，改以靜態小豬呈現。
+      </p>
+      {reducedMotion ? (
+        <p className="mt-1 text-xs leading-5 text-slate-700">已依系統設定關閉動態效果。</p>
+      ) : null}
+    </div>
   );
 }
 
-export default function PiggyBank3D({
-  members = [],
-  timeTheme = 'lunch',
-  weatherTheme = 'sunny',
-  isDepositing = false,
-  depositingColor = '#ff6b8a',
-  onAnimationEnd = () => {},
-}) {
+export default function PiggyBank3D({ members = [] }) {
+  const hostRef = useRef(null);
   const [reducedMotion, setReducedMotion] = useState(prefersReducedMotion);
-  const [triggerWiggle, setTriggerWiggle] = useState(false);
+  const [renderFailed, setRenderFailed] = useState(false);
+  const sample = useMemo(() => samplePiggyTokens(members), [members]);
 
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') {
       return undefined;
     }
+
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     const handleChange = (event) => setReducedMotion(event.matches);
     setReducedMotion(mediaQuery.matches);
     mediaQuery.addEventListener?.('change', handleChange);
+
     return () => mediaQuery.removeEventListener?.('change', handleChange);
   }, []);
 
-  const sample = useMemo(() => samplePiggyTokens(members), [members]);
-  const mood = getPigMood(sample.totalCount);
-
-  // Trigger pig wiggle/bounce animation when depositing starts
   useEffect(() => {
-    if (isDepositing) {
-      setTriggerWiggle(true);
-      const timer = setTimeout(() => {
-        setTriggerWiggle(false);
-        onAnimationEnd();
-      }, 1200);
-      return () => clearTimeout(timer);
+    const host = hostRef.current;
+    if (!host) {
+      return undefined;
     }
-  }, [isDepositing, onAnimationEnd]);
 
-  // Determine Time-of-day gradients and Pig visual tints
-  const timeGradientClass = {
-    morning: 'from-amber-200 via-orange-100 to-rose-50 text-slate-800',
-    lunch: 'from-indigo-900 via-purple-800 to-pink-700 text-white',
-    afternoon: 'from-sky-200 via-teal-100 to-emerald-50 text-slate-800',
-    evening: 'from-orange-400 via-pink-400 to-purple-600 text-white',
-    night: 'from-slate-950 via-indigo-950 to-slate-900 text-white',
-  }[timeTheme] || 'from-indigo-900 via-purple-800 to-pink-700 text-white';
+    let disposed = false;
+    let frameId = 0;
+    let resizeObserver = null;
+    let cleanupScene = () => {};
+    setRenderFailed(false);
 
-  const pigFilterStyle = {
-    morning: { filter: 'sepia(0.12) saturate(1.2) hue-rotate(5deg)' },
-    lunch: { filter: 'hue-rotate(240deg) saturate(1.05) brightness(0.95)' },
-    afternoon: { filter: 'none' },
-    evening: { filter: 'hue-rotate(15deg) saturate(1.25) contrast(1.05)' },
-    night: { filter: 'brightness(0.75) hue-rotate(210deg)' },
-  }[timeTheme] || {};
+    async function initialize() {
+      try {
+        const probeCanvas = document.createElement('canvas');
+        const webglContext = probeCanvas.getContext('webgl2') || probeCanvas.getContext('webgl');
+        if (!webglContext) {
+          throw new Error('WebGL unavailable');
+        }
 
-  // Generate simple weather elements inside the container
-  const renderWeatherElements = () => {
-    switch (weatherTheme) {
-      case 'sunny':
-        return (
-          <div className="absolute top-4 left-4 w-12 h-12 bg-amber-400 rounded-full blur-sm opacity-85 animate-pulse" />
-        );
-      case 'cloudy':
-        return (
-          <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-60">
-            <div className="absolute top-4 left-6 text-2xl float-cloud opacity-80">☁️</div>
-            <div className="absolute top-8 right-10 text-xl float-cloud opacity-70" style={{ animationDelay: '2s' }}>☁️</div>
-          </div>
-        );
-      case 'rain':
-      case 'storm':
-        return (
-          <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-75">
-            {weatherTheme === 'storm' && <div className="absolute inset-0 flash-lightning z-0" />}
-            {Array.from({ length: 12 }).map((_, idx) => {
-              const leftPercent = (idx * 9) + 5;
-              const delay = (idx * 0.15).toFixed(2);
-              const duration = (0.8 + ((idx * 7) % 5) * 0.1).toFixed(2);
-              return (
-                <div
-                  key={idx}
-                  className="absolute w-[2px] h-[24px] bg-sky-200 rain-particle"
-                  style={{
-                    left: `${leftPercent}%`,
-                    top: '-20px',
-                    animationDelay: `${delay}s`,
-                    animationDuration: `${duration}s`,
-                  }}
-                />
-              );
-            })}
-          </div>
-        );
-      case 'fog':
-        return (
-          <div className="absolute inset-0 pointer-events-none rounded-[2rem] backdrop-blur-[1.5px] bg-slate-100/15" />
-        );
-      case 'clear':
-        return (
-          <div className="absolute inset-0 pointer-events-none overflow-hidden">
-            {Array.from({ length: 10 }).map((_, idx) => {
-              const leftPercent = ((idx * 9 + 7) % 90) + 5;
-              const topPercent = ((idx * 13 + 3) % 40) + 5;
-              const delay = (idx * 0.3).toFixed(2);
-              return (
-                <div
-                  key={idx}
-                  className="absolute w-[3px] h-[3px] bg-white rounded-full star-twinkle"
-                  style={{
-                    left: `${leftPercent}%`,
-                    top: `${topPercent}%`,
-                    animationDelay: `${delay}s`,
-                  }}
-                />
-              );
-            })}
-          </div>
-        );
-      default:
-        return null;
+        const THREE = await import('three');
+        if (disposed) {
+          return;
+        }
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
+        camera.position.set(0, 0.45, 6.3);
+        camera.lookAt(0, 0.05, 0);
+
+        const renderer = new THREE.WebGLRenderer({
+          alpha: true,
+          antialias: true,
+          powerPreference: 'low-power',
+        });
+        renderer.setClearColor(0x000000, 0);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.domElement.className = 'h-full w-full cursor-grab active:cursor-grabbing';
+        renderer.domElement.style.touchAction = 'pan-y';
+        renderer.domElement.setAttribute('aria-hidden', 'true');
+        host.replaceChildren(renderer.domElement);
+
+        const geometries = new Set();
+        const materials = new Set();
+        let removeInteractionListeners = () => {};
+        cleanupScene = () => {
+          window.cancelAnimationFrame(frameId);
+          resizeObserver?.disconnect();
+          removeInteractionListeners();
+          geometries.forEach((geometry) => geometry.dispose());
+          materials.forEach((material) => material.dispose());
+          renderer.renderLists?.dispose();
+          renderer.dispose();
+          renderer.forceContextLoss?.();
+          renderer.domElement.remove();
+          scene.clear();
+        };
+
+        scene.add(new THREE.HemisphereLight(0xffffff, 0x7c2d12, 2.4));
+        const keyLight = new THREE.DirectionalLight(0xffffff, 3.2);
+        keyLight.position.set(3, 5, 5);
+        scene.add(keyLight);
+        const rimLight = new THREE.PointLight(0xf9a8d4, 18, 10);
+        rimLight.position.set(-3, 1, 3);
+        scene.add(rimLight);
+
+        const pig = new THREE.Group();
+        pig.rotation.y = -0.16;
+        scene.add(pig);
+
+        const trackGeometry = (geometry) => {
+          geometries.add(geometry);
+          return geometry;
+        };
+        const trackMaterial = (material) => {
+          materials.add(material);
+          return material;
+        };
+        const pinkMaterial = trackMaterial(new THREE.MeshPhysicalMaterial({
+          color: 0xe9d5ff,
+          transparent: true,
+          opacity: 0.48,
+          roughness: 0.06,
+          metalness: 0.04,
+          clearcoat: 1,
+          clearcoatRoughness: 0.06,
+          transmission: 0.78,
+          ior: 1.35,
+          thickness: 1.4,
+          attenuationDistance: 2.2,
+          attenuationColor: 0xf9a8d4,
+          depthWrite: false,
+        }));
+        const darkMaterial = trackMaterial(new THREE.MeshStandardMaterial({
+          color: 0x475569,
+          roughness: 0.4,
+        }));
+        const snoutMaterial = trackMaterial(new THREE.MeshPhysicalMaterial({
+          color: 0xfbcfe8,
+          roughness: 0.15,
+          clearcoat: 0.8,
+          transparent: true,
+          opacity: 0.7,
+          transmission: 0.45,
+        }));
+        const cheekMaterial = trackMaterial(new THREE.MeshPhysicalMaterial({
+          color: 0xfda4af,
+          roughness: 0.25,
+          transparent: true,
+          opacity: 0.72,
+          clearcoat: 0.42,
+        }));
+
+        function addPart(geometry, material, position, scale = [1, 1, 1], rotation = [0, 0, 0]) {
+          const mesh = new THREE.Mesh(trackGeometry(geometry), material);
+          mesh.position.set(...position);
+          mesh.scale.set(...scale);
+          mesh.rotation.set(...rotation);
+          pig.add(mesh);
+          return mesh;
+        }
+
+        addPart(new THREE.SphereGeometry(1, 32, 24), pinkMaterial, [0, 0, 0], [1.35, 1, 0.95]);
+        addPart(new THREE.SphereGeometry(0.72, 28, 20), pinkMaterial, [0, 0.4, 0.88], [1, 0.92, 0.86]);
+        addPart(new THREE.ConeGeometry(0.3, 0.62, 4), pinkMaterial, [-0.43, 1.02, 1.02], [1, 1, 0.65], [0.12, 0, -0.16]);
+        addPart(new THREE.ConeGeometry(0.3, 0.62, 4), pinkMaterial, [0.43, 1.02, 1.02], [1, 1, 0.65], [0.12, 0, 0.16]);
+        addPart(new THREE.CylinderGeometry(0.34, 0.39, 0.34, 28), snoutMaterial, [0, 0.22, 1.52], [1, 1, 0.72], [Math.PI / 2, 0, 0]);
+        addPart(new THREE.TorusGeometry(0.13, 0.015, 8, 20, Math.PI), darkMaterial, [-0.22, 0.56, 1.54], [1, 1, 1], [0, 0, Math.PI]);
+        addPart(new THREE.TorusGeometry(0.13, 0.015, 8, 20, Math.PI), darkMaterial, [0.22, 0.56, 1.54], [1, 1, 1], [0, 0, Math.PI]);
+        addPart(new THREE.SphereGeometry(0.045, 12, 8), darkMaterial, [-0.12, 0.22, 1.77]);
+        addPart(new THREE.SphereGeometry(0.045, 12, 8), darkMaterial, [0.12, 0.22, 1.77]);
+        addPart(new THREE.SphereGeometry(0.13, 14, 10), cheekMaterial, [-0.34, 0.3, 1.36], [1, 0.75, 0.5]);
+        addPart(new THREE.SphereGeometry(0.13, 14, 10), cheekMaterial, [0.34, 0.3, 1.36], [1, 0.75, 0.5]);
+        addPart(new THREE.BoxGeometry(0.78, 0.055, 0.16), darkMaterial, [0, 0.94, 0.05], [1, 1, 1], [0, 0, 0]);
+
+        for (const x of [-0.68, 0.68]) {
+          for (const z of [-0.42, 0.42]) {
+            addPart(new THREE.CylinderGeometry(0.2, 0.23, 0.65, 18), pinkMaterial, [x, -0.83, z]);
+          }
+        }
+
+        const starShape = new THREE.Shape();
+        const outerRadius = 0.15;
+        const innerRadius = 0.065;
+        for (let index = 0; index < 10; index += 1) {
+          const radius = index % 2 === 0 ? outerRadius : innerRadius;
+          const angle = (-Math.PI / 2) + (index * Math.PI) / 5;
+          const x = Math.cos(angle) * radius;
+          const y = Math.sin(angle) * radius;
+          if (!index) {
+            starShape.moveTo(x, y);
+          } else {
+            starShape.lineTo(x, y);
+          }
+        }
+        starShape.closePath();
+        const tokenGeometry = trackGeometry(new THREE.ExtrudeGeometry(starShape, {
+          depth: 0.05,
+          bevelEnabled: true,
+          bevelSegments: 1,
+          bevelSize: 0.008,
+          bevelThickness: 0.008,
+        }));
+        const tokenMaterials = new Map();
+        const tokenMeshes = sample.tokens.map((_, index) => {
+          const tokenColor = STAR_TOKEN_PALETTE[index % STAR_TOKEN_PALETTE.length];
+          if (!tokenMaterials.has(tokenColor)) {
+            tokenMaterials.set(tokenColor, trackMaterial(new THREE.MeshStandardMaterial({
+              color: tokenColor,
+              metalness: 0.38,
+              roughness: 0.32,
+            })));
+          }
+
+          const mesh = new THREE.Mesh(tokenGeometry, tokenMaterials.get(tokenColor));
+          const column = index % 8;
+          const row = Math.floor(index / 8);
+          const targetY = -0.62 + row * 0.105;
+          mesh.position.set(
+            -0.79 + column * 0.225 + Math.sin(index * 2.17) * 0.035,
+            reducedMotion ? targetY : 1.8 + (index % 9) * 0.12,
+            -0.45 + (index % 5) * 0.2,
+          );
+          mesh.rotation.set(Math.PI / 2, 0, index * 0.5);
+          mesh.userData.targetY = targetY;
+          pig.add(mesh);
+          return mesh;
+        });
+
+        const render = () => renderer.render(scene, camera);
+        const resize = () => {
+          if (disposed) {
+            return;
+          }
+
+          const width = Math.max(1, host.clientWidth || host.getBoundingClientRect().width || 1);
+          const height = Math.max(1, host.clientHeight || 288);
+          camera.aspect = width / height;
+          camera.updateProjectionMatrix();
+          renderer.setSize(width, height, false);
+          render();
+        };
+
+        let dragging = false;
+        let pointerX = 0;
+        const handlePointerDown = (event) => {
+          dragging = true;
+          pointerX = event.clientX;
+          renderer.domElement.setPointerCapture?.(event.pointerId);
+        };
+        const handlePointerMove = (event) => {
+          if (!dragging) {
+            return;
+          }
+
+          const deltaX = event.clientX - pointerX;
+          pointerX = event.clientX;
+          pig.rotation.y += deltaX * 0.012;
+          render();
+        };
+        const handlePointerUp = (event) => {
+          dragging = false;
+          renderer.domElement.releasePointerCapture?.(event.pointerId);
+        };
+
+        renderer.domElement.addEventListener('pointerdown', handlePointerDown);
+        renderer.domElement.addEventListener('pointermove', handlePointerMove);
+        renderer.domElement.addEventListener('pointerup', handlePointerUp);
+        renderer.domElement.addEventListener('pointercancel', handlePointerUp);
+        window.addEventListener('resize', resize);
+        removeInteractionListeners = () => {
+          window.removeEventListener('resize', resize);
+          renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
+          renderer.domElement.removeEventListener('pointermove', handlePointerMove);
+          renderer.domElement.removeEventListener('pointerup', handlePointerUp);
+          renderer.domElement.removeEventListener('pointercancel', handlePointerUp);
+        };
+        if (typeof ResizeObserver === 'function') {
+          resizeObserver = new ResizeObserver(resize);
+          resizeObserver.observe(host);
+        }
+        resize();
+
+        if (!reducedMotion) {
+          const startedAt = performance.now();
+          let previousTime = startedAt;
+          const animate = (time) => {
+            if (disposed) {
+              return;
+            }
+
+            const delta = Math.min(40, time - previousTime);
+            previousTime = time;
+            if (!dragging) {
+              pig.rotation.y += delta * 0.00016;
+            }
+
+            const progress = Math.min(1, (time - startedAt) / 950);
+            const eased = 1 - ((1 - progress) ** 3);
+            for (const mesh of tokenMeshes) {
+              const startY = 1.8 + (mesh.userData.targetY * -0.25);
+              mesh.position.y = startY + (mesh.userData.targetY - startY) * eased;
+            }
+            render();
+            frameId = window.requestAnimationFrame(animate);
+          };
+          frameId = window.requestAnimationFrame(animate);
+        } else {
+          render();
+        }
+      } catch {
+        if (!disposed) {
+          cleanupScene();
+          setRenderFailed(true);
+        }
+      }
     }
-  };
 
-  const label = `小豬撲滿，內含 ${sample.totalCount} Token，畫面顯示 ${sample.renderedCount} 個代表物件`;
+    void initialize();
+
+    return () => {
+      disposed = true;
+      cleanupScene();
+      host.replaceChildren();
+    };
+  }, [reducedMotion, sample.tokens]);
+
+  const visualSummary = sample.totalCount > sample.renderedCount
+    ? `以 ${sample.renderedCount} 個代表物件呈現，共 ${sample.totalCount} Token`
+    : `共 ${sample.totalCount} Token`;
 
   return (
-    <figure
-      role="img"
-      aria-label={label}
-      className={`relative w-full h-80 rounded-[2rem] border border-white/20 shadow-xl overflow-hidden bg-gradient-to-b ${timeGradientClass} transition-all duration-700 flex flex-col items-center justify-center`}
-    >
-      {/* Background Weather Elements */}
-      {renderWeatherElements()}
-
-      {/* Floating Star/Token for Deposit Animation */}
-      {isDepositing && (
-        <div
-          className="absolute z-30 animate-drop-token"
-          style={{ top: '65px', left: '49%' }}
-        >
-          <div
-            className="w-5 h-5 rounded-full border border-white/70 shadow-lg flex items-center justify-center font-bold text-white text-[10px]"
-            style={{ backgroundColor: depositingColor }}
-          >
-            ★
-          </div>
-        </div>
-      )}
-
-      {/* The Transparent Pig visual body */}
-      <div
-        className={`relative w-60 h-60 flex items-center justify-center ${
-          triggerWiggle && !reducedMotion ? 'animate-wiggle-pig' : ''
-        }`}
-      >
-        {/* Main Pig PNG Image */}
-        <img
-          src={piggyBankPng}
-          alt="Transparent Glass Piggy Bank"
-          className="w-52 h-52 object-contain select-none pointer-events-none transition-all duration-700"
-          style={pigFilterStyle}
-        />
-
-        {/* Stacked colored tokens inside the pig belly */}
-        <div
-          className="absolute bottom-[23%] left-[23%] w-[54%] h-[35%] pointer-events-none flex flex-wrap-reverse gap-[3px] items-end justify-center content-start overflow-hidden rounded-full"
-          style={{ transform: 'rotate(-2deg)' }}
-        >
-          {sample.tokens.map((t, idx) => {
-            const rot = (Math.sin(idx * 3.14) * 20).toFixed(1);
-            return (
-              <span
-                key={t.id || idx}
-                className="w-[11px] h-[11px] rounded-full border border-white/40 shadow-inner inline-block shrink-0"
-                style={{
-                  backgroundColor: t.color,
-                  transform: `rotate(${rot}deg)`,
-                }}
-              />
-            );
-          })}
-        </div>
-
-        {/* Dynamic Cute Eyes/Mouth overlaid on top of Pig face */}
-        <div className="absolute top-[37%] left-[54%] w-[25%] h-[15%] pointer-events-none z-20">
-          <PigFace mood={mood.key} />
-        </div>
+    <figure className="relative overflow-hidden rounded-[1.75rem] border border-white/15 bg-[radial-gradient(circle_at_20%_20%,rgba(253,186,116,0.35),transparent_42%),radial-gradient(circle_at_78%_26%,rgba(244,114,182,0.22),transparent_45%),linear-gradient(135deg,rgba(125,211,252,0.22),rgba(196,181,253,0.2)_50%,rgba(252,231,243,0.24))]">
+      <div className="absolute left-4 top-4 z-10 rounded-full bg-slate-950/80 px-3 py-1 text-xs font-semibold text-white">
+        {visualSummary}
       </div>
-
-      {reducedMotion ? (
-        <p className="absolute bottom-2 text-[10px] opacity-75">已依系統設定關閉動態效果。</p>
-      ) : null}
+      {renderFailed ? (
+        <StaticPig
+          totalCount={sample.totalCount}
+          renderedCount={sample.renderedCount}
+          reducedMotion={reducedMotion}
+        />
+      ) : (
+        <div
+          ref={hostRef}
+          className="h-72 w-full"
+          role="img"
+          aria-label={`可水平拖曳旋轉的小豬撲滿，內含 ${sample.totalCount} Token`}
+        />
+      )}
+      <figcaption className="sr-only">
+        小豬內的彩色星形 Token 依總 Token 數量取樣呈現，最多顯示 {MAX_RENDERED_TOKENS} 個物件。
+      </figcaption>
     </figure>
   );
 }
