@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import piggyBankPng from './gemini-piggy-bank.png';
 
 const MAX_RENDERED_TOKENS = 80;
 const DEFAULT_TOKEN_COLOR = '#f472b6';
@@ -75,7 +74,33 @@ function StaticPig({ totalCount, renderedCount, reducedMotion }) {
     <div className="flex h-full min-h-64 flex-col items-center justify-center px-4 text-center">
       <div role="img" aria-label={label} className="w-full max-w-56">
         <svg viewBox="0 0 240 190" className="h-auto w-full" aria-hidden="true">
-          <image href={piggyBankPng} x="25" y="0" width="190" height="190" preserveAspectRatio="xMidYMid meet" />
+          <defs>
+            <linearGradient id="pig-body" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#bae6fd" stopOpacity="0.82" />
+              <stop offset="52%" stopColor="#c4b5fd" stopOpacity="0.76" />
+              <stop offset="100%" stopColor="#fbcfe8" stopOpacity="0.72" />
+            </linearGradient>
+            <radialGradient id="pig-glow" cx="50%" cy="40%" r="55%">
+              <stop offset="0%" stopColor="#ffffff" stopOpacity="0.64" />
+              <stop offset="100%" stopColor="#ffffff" stopOpacity="0.06" />
+            </radialGradient>
+          </defs>
+          <ellipse cx="108" cy="106" rx="80" ry="56" fill="url(#pig-body)" stroke="#f8fafc" strokeOpacity="0.5" strokeWidth="3" />
+          <ellipse cx="108" cy="106" rx="72" ry="50" fill="url(#pig-glow)" />
+          <circle cx="164" cy="84" r="37" fill="url(#pig-body)" stroke="#f8fafc" strokeOpacity="0.52" strokeWidth="3" />
+          <path d="M141 56 L146 29 L165 50 Z" fill="#ddd6fe" fillOpacity="0.85" stroke="#f8fafc" strokeOpacity="0.5" strokeWidth="3" strokeLinejoin="round" />
+          <path d="M173 49 L194 30 L194 61 Z" fill="#ddd6fe" fillOpacity="0.85" stroke="#f8fafc" strokeOpacity="0.5" strokeWidth="3" strokeLinejoin="round" />
+          <ellipse cx="190" cy="93" rx="22" ry="16" fill="#fbcfe8" fillOpacity="0.7" stroke="#f8fafc" strokeOpacity="0.45" strokeWidth="3" />
+          <circle cx="183" cy="92" r="3.2" fill="#64748b" />
+          <circle cx="196" cy="92" r="3.2" fill="#64748b" />
+          <path d="M160 75 Q166 81 172 75" fill="none" stroke="#334155" strokeWidth="3.5" strokeLinecap="round" />
+          <circle cx="154" cy="91" r="6.3" fill="#fda4af" fillOpacity="0.65" />
+          <circle cx="175" cy="95" r="5.2" fill="#fda4af" fillOpacity="0.6" />
+          <rect x="58" y="150" width="23" height="25" rx="10" fill="#e9d5ff" fillOpacity="0.86" stroke="#f8fafc" strokeOpacity="0.5" strokeWidth="3" />
+          <rect x="132" y="150" width="23" height="25" rx="10" fill="#e9d5ff" fillOpacity="0.86" stroke="#f8fafc" strokeOpacity="0.5" strokeWidth="3" />
+          <rect x="82" y="58" width="52" height="7" rx="3.5" fill="#334155" />
+          <path d="M95 112 L98 118 L105 119 L100 123 L101 130 L95 126 L89 130 L90 123 L85 119 L92 118 Z" fill="#fb7185" stroke="#fff" strokeWidth="1.5" />
+          <path d="M123 126 L125 131 L131 132 L127 136 L128 142 L123 139 L118 142 L119 136 L115 132 L121 131 Z" fill="#38bdf8" stroke="#fff" strokeWidth="1.5" />
         </svg>
       </div>
       <p className="mt-2 text-sm font-semibold text-slate-900">
