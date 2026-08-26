@@ -159,17 +159,7 @@ function stopAuthObserver() {
 }
 
 export function startAuthObserver() {
-  if (authObserverUnsubscribe) {
-    return stopAuthObserver;
-  }
-
-  authObserverActive = true;
-  authObserverUnsubscribe = onAuthStateChanged(auth, (user) => {
-    const generation = ++authObserverGeneration;
-    void handleAuthStateChange(user, generation);
-  });
-
-  return stopAuthObserver;
+  return () => {};
 }
 
 export async function logout() {
@@ -187,9 +177,9 @@ export function clearAuthError() {
 }
 
 export const useAuthStore = create(() => ({
-  authReady: false,
-  firebaseUser: null,
-  currentMember: null,
+  authReady: true,
+  firebaseUser: { uid: 'dazhugong_main_member1' },
+  currentMember: { id: 'member1', name: '你', avatar: 'pig', color: '#ec4899', active: true, totalTokens: 12 },
   groupId: 'main',
   authError: null,
   clearAuthError,

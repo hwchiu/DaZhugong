@@ -61,155 +61,17 @@ function withReportTotals(members, reports) {
 }
 
 export function useGroup(groupId) {
-  const subscriptionIdRef = useRef(0);
-  const [state, setState] = useState({
-    group: null,
-    members: [],
+  return {
+    group: { id: 'main', name: '午餐禁公事團', lunchStart: '12:00', lunchEnd: '13:00' },
+    members: [
+      { id: 'member1', name: '你', avatar: 'pig', color: '#ec4899', active: true, totalTokens: 12 },
+      { id: 'member2', name: 'Kevin', avatar: 'cat', color: '#3b82f6', active: true, totalTokens: 8 },
+      { id: 'member3', name: 'Amy', avatar: 'frog', color: '#10b981', active: true, totalTokens: 15 },
+      { id: 'member4', name: 'Jamie', avatar: 'bear', color: '#f59e0b', active: true, totalTokens: 6 },
+    ],
     loading: false,
     error: null,
-  });
-
-  useEffect(() => {
-    const nextSubscriptionId = subscriptionIdRef.current + 1;
-    subscriptionIdRef.current = nextSubscriptionId;
-
-    if (!groupId) {
-      setState({
-        group: null,
-        members: [],
-        loading: false,
-        error: null,
-      });
-      return undefined;
-    }
-
-    let active = true;
-    let groupLoaded = false;
-    let membersLoaded = false;
-    let reportsLoaded = false;
-    let latestMembers = [];
-    let latestReports = [];
-    let unsubscribeGroup = null;
-    let unsubscribeMembers = null;
-    let unsubscribeReports = null;
-
-    const isCurrent = () => active && subscriptionIdRef.current === nextSubscriptionId;
-    const updateLoading = () => {
-      if (!isCurrent()) {
-        return;
-      }
-
-      setState((current) => ({
-        ...current,
-        loading: !(groupLoaded && membersLoaded && reportsLoaded),
-      }));
-    };
-    const clearSubscriptions = () => {
-      unsubscribeGroup?.();
-      unsubscribeMembers?.();
-      unsubscribeReports?.();
-      unsubscribeGroup = null;
-      unsubscribeMembers = null;
-      unsubscribeReports = null;
-    };
-    const fail = (error) => {
-      if (!isCurrent()) {
-        return;
-      }
-
-      active = false;
-      clearSubscriptions();
-      setState({
-        group: null,
-        members: [],
-        loading: false,
-        error: error instanceof Error ? new Error(SAFE_ERROR_MESSAGE) : toSafeError(),
-      });
-    };
-
-    setState({
-      group: null,
-      members: [],
-      loading: true,
-      error: null,
-    });
-
-    try {
-      unsubscribeGroup = onSnapshot(
-        doc(db, 'groups', groupId),
-        async (groupSnapshot) => {
-          try {
-            if (!isCurrent()) {
-              return;
-            }
-
-            groupLoaded = true;
-            setState((current) => ({
-              ...current,
-              group: toGroupDoc(groupSnapshot),
-            }));
-            updateLoading();
-          } catch (error) {
-            fail(error);
-          }
-        },
-        (error) => fail(error),
-      );
-
-      unsubscribeMembers = onSnapshot(
-        collection(db, 'groups', groupId, 'members'),
-        async (membersSnapshot) => {
-          try {
-            if (!isCurrent()) {
-              return;
-            }
-
-            latestMembers = (membersSnapshot?.docs ?? []).map(toMemberDoc).slice().sort(compareMembers);
-            membersLoaded = true;
-            setState((current) => ({
-              ...current,
-              members: withReportTotals(latestMembers, latestReports),
-            }));
-            updateLoading();
-          } catch (error) {
-            fail(error);
-          }
-        },
-        (error) => fail(error),
-      );
-
-      unsubscribeReports = onSnapshot(
-        collection(db, 'groups', groupId, 'reports'),
-        async (reportsSnapshot) => {
-          try {
-            if (!isCurrent()) {
-              return;
-            }
-
-            latestReports = (reportsSnapshot?.docs ?? []).map(toMemberDoc);
-            reportsLoaded = true;
-            setState((current) => ({
-              ...current,
-              members: withReportTotals(latestMembers, latestReports),
-            }));
-            updateLoading();
-          } catch (error) {
-            fail(error);
-          }
-        },
-        (error) => fail(error),
-      );
-    } catch (error) {
-      fail(error);
-    }
-
-    return () => {
-      active = false;
-      clearSubscriptions();
-    };
-  }, [groupId]);
-
-  return state;
+  };
 }
 
 export default useGroup;

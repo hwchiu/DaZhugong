@@ -146,7 +146,7 @@ export default function Vote() {
       });
       setTimeout(() => {
         navigate('/');
-      }, 1500);
+      }, 100);
     } catch {
       setModalError(SAFE_SUBMIT_ERROR_MESSAGE);
     } finally {
