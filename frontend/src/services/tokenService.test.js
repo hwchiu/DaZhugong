@@ -8,7 +8,15 @@ const firebaseState = vi.hoisted(() => ({
 const firestoreMock = vi.hoisted(() => ({
   addDoc: vi.fn(),
   collection: vi.fn((db, ...path) => ({ kind: 'collection', db, path })),
-  doc: vi.fn((db, ...path) => ({ kind: 'doc', db, path })),
+  // 支援兩種呼叫方式：doc(db, ...path) 原本的多段路徑寫法，
+  // 以及 doc(collectionRef) 單一參數、自動產生ID的寫法(reportAndConfirmToken用這個
+  // 讓同一個token跟report共用同一組自動產生的id)。
+  doc: vi.fn((first, ...rest) => {
+    if (rest.length === 0 && first && first.kind === 'collection') {
+      return { kind: 'doc', db: first.db, path: [...first.path, 'generated-id'], id: 'generated-id' };
+    }
+    return { kind: 'doc', db: first, path: rest };
+  }),
   getDoc: vi.fn(),
   serverTimestamp: vi.fn(() => ({ kind: 'server-timestamp' })),
   updateDoc: vi.fn(),
@@ -18,7 +26,7 @@ const firestoreMock = vi.hoisted(() => ({
 vi.mock('../firebase.js', () => firebaseState);
 vi.mock('firebase/firestore', () => firestoreMock);
 
-import { reportToken, resolveToken } from './tokenService.js';
+import { reportAndConfirmToken, reportToken, resolveToken } from './tokenService.js';
 
 const currentMember = {
   id: 'member-1',
@@ -86,6 +94,119 @@ describe('reportToken', () => {
         resolvedAt: null,
       },
     );
+  });
+});
+
+describe('reportAndConfirmToken', () => {
+  it('rejects an inactive current member before writing', async () => {
+    await expect(reportAndConfirmToken({
+      groupId: 'main',
+      targetId: 'member-2',
+      currentMember: { ...currentMember, active: false },
+      reason: '聊到deadline',
+    })).rejects.toThrow(/inactive/i);
+
+    expect(firestoreMock.writeBatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects targeting self', async () => {
+    await expect(reportAndConfirmToken({
+      groupId: 'main',
+      targetId: 'member-1',
+      currentMember,
+      reason: '聊到deadline',
+    })).rejects.toThrow(/different target/i);
+
+    expect(firestoreMock.writeBatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects an inactive target member when target data is available', async () => {
+    await expect(reportAndConfirmToken({
+      groupId: 'main',
+      targetId: 'member-2',
+      targetMember: { id: 'member-2', active: false },
+      currentMember,
+      reason: '聊到deadline',
+    })).rejects.toThrow(/inactive/i);
+
+    expect(firestoreMock.writeBatch).not.toHaveBeenCalled();
+  });
+
+  it('prevents spoofing when Firebase Auth does not match the current member', async () => {
+    firebaseState.auth.currentUser = { uid: 'attacker' };
+
+    await expect(reportAndConfirmToken({
+      groupId: 'main',
+      targetId: 'member-2',
+      currentMember,
+      reason: '聊到deadline',
+    })).rejects.toThrow(/authenticated member/i);
+
+    expect(firestoreMock.writeBatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing or whitespace-only reason without writing', async () => {
+    await expect(reportAndConfirmToken({
+      groupId: 'main',
+      targetId: 'member-2',
+      currentMember,
+      reason: '   ',
+    })).rejects.toThrow(/reason is required/i);
+
+    await expect(reportAndConfirmToken({
+      groupId: 'main',
+      targetId: 'member-2',
+      currentMember,
+    })).rejects.toThrow(/reason is required/i);
+
+    expect(firestoreMock.writeBatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects a reason longer than 200 characters without writing', async () => {
+    await expect(reportAndConfirmToken({
+      groupId: 'main',
+      targetId: 'member-2',
+      currentMember,
+      reason: 'x'.repeat(201),
+    })).rejects.toThrow(/200 characters/i);
+
+    expect(firestoreMock.writeBatch).not.toHaveBeenCalled();
+  });
+
+  it('writes one atomic batch that creates a confirmed token and matching report sharing the same id', async () => {
+    const batch = { set: vi.fn(), commit: vi.fn().mockResolvedValue(undefined) };
+    firestoreMock.writeBatch.mockReturnValue(batch);
+
+    const result = await reportAndConfirmToken({
+      groupId: 'main',
+      targetId: 'member-2',
+      currentMember,
+      reason: '  午餐時間聊到deadline  ',
+    });
+
+    expect(result).toEqual(expect.objectContaining({ id: 'generated-id' }));
+    expect(batch.set).toHaveBeenCalledWith(
+      expect.objectContaining({ path: ['groups', 'main', 'tokens', 'generated-id'] }),
+      {
+        targetId: 'member-2',
+        reporterId: 'member-1',
+        status: 'confirmed',
+        reason: '午餐時間聊到deadline',
+        createdAt: { kind: 'server-timestamp' },
+        confirmedAt: { kind: 'server-timestamp' },
+        resolvedAt: { kind: 'server-timestamp' },
+      },
+    );
+    expect(batch.set).toHaveBeenCalledWith(
+      expect.objectContaining({ path: ['groups', 'main', 'reports', 'generated-id'] }),
+      {
+        targetId: 'member-2',
+        reporterId: 'member-1',
+        reason: '午餐時間聊到deadline',
+        timestamp: { kind: 'server-timestamp' },
+      },
+    );
+    expect(batch.commit).toHaveBeenCalledTimes(1);
   });
 });
 

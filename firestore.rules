@@ -30,27 +30,57 @@ service cloud.firestore {
     }
 
     function hasExactTokenFields(data) {
-      return data.keys().hasAll([
-          'targetId',
-          'reporterId',
-          'status',
-          'createdAt',
-          'confirmedAt',
-          'resolvedAt'
-        ])
-        && data.keys().hasOnly([
-          'targetId',
-          'reporterId',
-          'status',
-          'createdAt',
-          'confirmedAt',
-          'resolvedAt'
-        ]);
+      return (
+        data.keys().hasAll([
+            'targetId',
+            'reporterId',
+            'status',
+            'createdAt',
+            'confirmedAt',
+            'resolvedAt'
+          ])
+          && data.keys().hasOnly([
+            'targetId',
+            'reporterId',
+            'status',
+            'createdAt',
+            'confirmedAt',
+            'resolvedAt'
+          ])
+      ) || (
+        data.keys().hasAll([
+            'targetId',
+            'reporterId',
+            'status',
+            'reason',
+            'createdAt',
+            'confirmedAt',
+            'resolvedAt'
+          ])
+          && data.keys().hasOnly([
+            'targetId',
+            'reporterId',
+            'status',
+            'reason',
+            'createdAt',
+            'confirmedAt',
+            'resolvedAt'
+          ])
+      );
     }
 
     function hasExactReportFields(data) {
-      return data.keys().hasAll(['targetId', 'reporterId', 'timestamp'])
-        && data.keys().hasOnly(['targetId', 'reporterId', 'timestamp']);
+      return (
+        data.keys().hasAll(['targetId', 'reporterId', 'timestamp'])
+        && data.keys().hasOnly(['targetId', 'reporterId', 'timestamp'])
+      ) || (
+        data.keys().hasAll(['targetId', 'reporterId', 'reason', 'timestamp'])
+        && data.keys().hasOnly(['targetId', 'reporterId', 'reason', 'timestamp'])
+      );
+    }
+
+    function validReasonValue(reason) {
+      return reason is string && reason.size() > 0 && reason.size() <= 200;
     }
 
     function validTokenCreate(groupId) {
@@ -125,6 +155,52 @@ service cloud.firestore {
         && isMember(groupId, request.resource.data.targetId);
     }
 
+    // ---- 新流程：報告人直接選人+填原因，一次寫入就是「已確認」，不再經過對方確認 ----
+    // 跟舊流程最關鍵的差異：isMember() 檢查的是 reporterId(自己)，不是 targetId(對方)。
+    // 舊流程是「對方確認才算數」，新流程是「自己選+自己送出就算數」，這是刻意的行為改變，
+    // 不是疏忽——這一行如果寫成isMember(...targetId)，就等於還是舊的信任模型。
+    function matchingDirectReportAfter(groupId, tokenId) {
+      return !exists(reportPath(groupId, tokenId))
+        && existsAfter(reportPath(groupId, tokenId))
+        && hasExactReportFields(getAfter(reportPath(groupId, tokenId)).data)
+        && getAfter(reportPath(groupId, tokenId)).data.targetId == request.resource.data.targetId
+        && getAfter(reportPath(groupId, tokenId)).data.reporterId == request.resource.data.reporterId
+        && getAfter(reportPath(groupId, tokenId)).data.timestamp == request.time
+        && getAfter(reportPath(groupId, tokenId)).data.reason == request.resource.data.reason;
+    }
+
+    function validDirectConfirmedTokenCreate(groupId, tokenId) {
+      return hasExactTokenFields(request.resource.data)
+        && request.resource.data.keys().hasAll(['reason'])
+        && validReasonValue(request.resource.data.reason)
+        && request.resource.data.targetId is string
+        && request.resource.data.reporterId is string
+        && request.resource.data.targetId != request.resource.data.reporterId
+        && memberIsActive(groupId, request.resource.data.targetId)
+        && isMember(groupId, request.resource.data.reporterId)
+        && request.resource.data.status == 'confirmed'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.confirmedAt == request.time
+        && request.resource.data.resolvedAt == request.time
+        && matchingDirectReportAfter(groupId, tokenId);
+    }
+
+    function validDirectReportCreate(groupId, tokenId) {
+      return hasExactReportFields(request.resource.data)
+        && request.resource.data.keys().hasAll(['reason'])
+        && validReasonValue(request.resource.data.reason)
+        && request.resource.data.timestamp == request.time
+        && !exists(tokenPath(groupId, tokenId))
+        && existsAfter(tokenPath(groupId, tokenId))
+        && getAfter(tokenPath(groupId, tokenId)).data.status == 'confirmed'
+        && getAfter(tokenPath(groupId, tokenId)).data.targetId == request.resource.data.targetId
+        && getAfter(tokenPath(groupId, tokenId)).data.reporterId == request.resource.data.reporterId
+        && getAfter(tokenPath(groupId, tokenId)).data.reason == request.resource.data.reason
+        && memberExists(groupId, request.resource.data.reporterId)
+        && memberIsActive(groupId, request.resource.data.targetId)
+        && isMember(groupId, request.resource.data.reporterId);
+    }
+
     match /groups/{groupId} {
       allow read: if true;
       allow write: if false;
@@ -140,14 +216,14 @@ service cloud.firestore {
 
       match /tokens/{tokenId} {
         allow read: if true;
-        allow create: if validTokenCreate(groupId);
+        allow create: if validTokenCreate(groupId) || validDirectConfirmedTokenCreate(groupId, tokenId);
         allow update: if validTokenUpdate(groupId, tokenId);
         allow delete: if false;
       }
 
       match /reports/{tokenId} {
         allow read: if true;
-        allow create: if validReportCreate(groupId, tokenId);
+        allow create: if validReportCreate(groupId, tokenId) || validDirectReportCreate(groupId, tokenId);
         allow update, delete: if false;
       }
 

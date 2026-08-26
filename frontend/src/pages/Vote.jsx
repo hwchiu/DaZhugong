@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import MemberAvatar from '../components/MemberAvatar.jsx';
 import { useGroup } from '../hooks/useGroup.js';
 import { useTokens } from '../hooks/useTokens.js';
-import { reportToken } from '../services/tokenService.js';
+import { reportAndConfirmToken } from '../services/tokenService.js';
 import { useAuthStore } from '../store/authStore.js';
 
 const SAFE_LOAD_ERROR_MESSAGE = '目前無法載入投票資料，請稍後再試。';
-const SAFE_SUBMIT_ERROR_MESSAGE = '目前無法送出這一票，請稍後再試。';
+const SAFE_SUBMIT_ERROR_MESSAGE = '目前無法儲存這筆紀錄，請稍後再試。';
+const REASON_MAX_LENGTH = 200;
 
 function getMemberName(member) {
   return member?.name ?? member?.displayName ?? '未命名成員';
@@ -36,8 +37,12 @@ export default function Vote() {
   const { members, loading: groupLoading, error: groupError } = useGroup(groupId);
   const { tokens, loading: tokensLoading, error: tokensError } = useTokens(groupId, null);
   const [selectedId, setSelectedId] = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [reason, setReason] = useState('');
   const [pending, setPending] = useState(false);
+  const [modalError, setModalError] = useState('');
   const [feedback, setFeedback] = useState({ tone: null, message: '' });
+  const reasonInputRef = useRef(null);
 
   const totalsByTargetId = useMemo(() => buildConfirmedTotals(tokens), [tokens]);
   const eligibleMembers = useMemo(
@@ -55,6 +60,7 @@ export default function Vote() {
     members.find((member) => member?.id === selectedId && member?.active === true) ?? null;
   const loading = groupLoading || tokensLoading;
   const loadError = groupError || tokensError;
+  const trimmedReason = reason.trim();
 
   useEffect(() => {
     if (!selectedId) {
@@ -66,6 +72,12 @@ export default function Vote() {
     }
   }, [eligibleMembers, selectedId]);
 
+  useEffect(() => {
+    if (modalOpen) {
+      reasonInputRef.current?.focus();
+    }
+  }, [modalOpen]);
+
   function handleSelect(member) {
     if (pending) {
       return;
@@ -75,33 +87,63 @@ export default function Vote() {
     setFeedback({ tone: null, message: '' });
   }
 
-  async function handleSubmit(event) {
+  function handleOpenReasonModal() {
+    if (!selectedMember || pending) {
+      return;
+    }
+
+    setReason('');
+    setModalError('');
+    setModalOpen(true);
+  }
+
+  function handleCloseModal() {
+    if (pending) {
+      return;
+    }
+
+    setModalOpen(false);
+    setReason('');
+    setModalError('');
+  }
+
+  async function handleSaveReason(event) {
     event.preventDefault();
 
     if (!selectedMember || !selectedTargetMember || !currentMember || !groupId || pending) {
       return;
     }
 
+    if (!trimmedReason) {
+      setModalError('請輸入違規原因。');
+      return;
+    }
+    if (trimmedReason.length > REASON_MAX_LENGTH) {
+      setModalError(`原因請控制在 ${REASON_MAX_LENGTH} 字以內。`);
+      return;
+    }
+
     setPending(true);
-    setFeedback({ tone: null, message: '' });
+    setModalError('');
 
     try {
-      await reportToken({
+      await reportAndConfirmToken({
         groupId,
         targetId: selectedMember.id,
         targetMember: selectedTargetMember,
         currentMember,
+        reason: trimmedReason,
       });
+      const memberName = getMemberName(selectedMember);
+      setModalOpen(false);
+      setReason('');
       setSelectedId('');
       setFeedback({
         tone: 'success',
-        message: `已送出給${getMemberName(selectedMember)}的一票，等待對方確認。`,
+        message: `已將一枚屬於${memberName}的 Token 投入豬公。`,
       });
     } catch {
-      setFeedback({
-        tone: 'error',
-        message: SAFE_SUBMIT_ERROR_MESSAGE,
-      });
+      setModalError(SAFE_SUBMIT_ERROR_MESSAGE);
     } finally {
       setPending(false);
     }
@@ -118,7 +160,9 @@ export default function Vote() {
             </span>
             <div>
               <h1 className="text-2xl font-bold text-slate-900">投票</h1>
-              <p className="mt-1 text-sm leading-6 text-slate-600">選擇一位仍在群組中的成員，送出待確認的一票。</p>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                選擇一位違規的成員，填寫原因後直接投入代表他的 Token。
+              </p>
             </div>
           </div>
         </section>
@@ -142,7 +186,7 @@ export default function Vote() {
             <section className="rounded-[2rem] bg-white p-5 shadow-lg shadow-rose-100">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-900">選擇對象</h2>
+                  <h2 className="text-lg font-semibold text-slate-900">選擇違規者</h2>
                   <p className="mt-1 text-sm leading-6 text-slate-600">只顯示其他 active 成員，票數依已確認紀錄計算。</p>
                 </div>
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
@@ -176,7 +220,7 @@ export default function Vote() {
                           已確認 {member.confirmedCount} 票
                         </span>
                         <span className="mt-3 text-sm leading-6 text-slate-600">
-                          {selected ? '已選擇，準備送出。' : '點一下即可選擇。'}
+                          {selected ? '已選擇，準備填寫原因。' : '點一下即可選擇。'}
                         </span>
                       </button>
                     );
@@ -185,19 +229,19 @@ export default function Vote() {
               ) : (
                 <div className="mt-5 rounded-[1.5rem] border border-dashed border-slate-200 bg-slate-50 px-5 py-8 text-center">
                   <p className="text-base font-semibold text-slate-900">目前沒有其他可投票的成員。</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">等待其他 active 成員加入後，就能在這裡送出一票。</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">等待其他 active 成員加入後，就能在這裡選擇違規者。</p>
                 </div>
               )}
             </section>
 
-            <form onSubmit={handleSubmit} className="rounded-[2rem] bg-white p-5 shadow-lg shadow-rose-100">
+            <section className="rounded-[2rem] bg-white p-5 shadow-lg shadow-rose-100">
               <div className="rounded-[1.5rem] bg-slate-50 px-4 py-4">
                 <p className="text-sm font-medium uppercase tracking-[0.24em] text-slate-500">目前選擇</p>
                 <p className="mt-2 text-lg font-semibold text-slate-900">
                   {selectedMember ? `目前選擇：${getMemberName(selectedMember)}` : '請先選擇一位成員'}
                 </p>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  送出後會先進入待確認狀態，對方確認後才會計入正式票數。
+                  確認後會請你填寫違規原因，儲存後直接計入正式票數，不需要對方另外確認。
                 </p>
               </div>
 
@@ -216,16 +260,79 @@ export default function Vote() {
               ) : null}
 
               <button
-                type="submit"
+                type="button"
                 disabled={!selectedMember || pending}
+                onClick={handleOpenReasonModal}
                 className="mt-4 inline-flex min-h-12 w-full items-center justify-center rounded-2xl bg-slate-950 px-4 py-3 text-base font-semibold text-white shadow-lg shadow-slate-300 transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-300 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 disabled:shadow-none"
               >
-                {pending ? '送出中…' : selectedMember ? '送出一票' : '請先選擇成員'}
+                {selectedMember ? `確認：${getMemberName(selectedMember)}` : '請先選擇成員'}
               </button>
-            </form>
+            </section>
           </>
         )}
       </div>
+
+      {modalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 px-4 pb-4 sm:items-center">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reason-modal-title"
+            className="w-full max-w-sm rounded-[1.75rem] bg-white p-6 shadow-2xl"
+          >
+            <h2 id="reason-modal-title" className="text-lg font-bold text-slate-900">
+              違規原因
+            </h2>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              {selectedMember ? `這一枚 Token 會記在${getMemberName(selectedMember)}名下。` : ''}
+            </p>
+
+            <form onSubmit={handleSaveReason} className="mt-4">
+              <label htmlFor="violation-reason" className="text-sm font-medium text-slate-700">
+                原因說明
+              </label>
+              <textarea
+                id="violation-reason"
+                ref={reasonInputRef}
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                disabled={pending}
+                maxLength={REASON_MAX_LENGTH}
+                rows={3}
+                placeholder="例如：午餐時間聊到deadline"
+                className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-50"
+              />
+              <p className="mt-1 text-right text-xs text-slate-400">
+                {trimmedReason.length}/{REASON_MAX_LENGTH}
+              </p>
+
+              {modalError ? (
+                <p role="alert" aria-live="assertive" className="mt-2 rounded-2xl bg-rose-50 px-4 py-3 text-sm font-medium text-rose-900">
+                  {modalError}
+                </p>
+              ) : null}
+
+              <div className="mt-4 flex gap-3">
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  disabled={pending}
+                  className="flex-1 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={pending || !trimmedReason}
+                  className="flex-1 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 disabled:shadow-none"
+                >
+                  {pending ? '儲存中…' : '儲存'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

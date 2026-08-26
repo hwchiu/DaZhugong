@@ -47,6 +47,54 @@ export async function reportToken({ groupId, targetId, targetMember, currentMemb
   });
 }
 
+// 新流程：報告人直接選人+填原因，一次寫入就是「已確認」，跳過原本「對方需另外確認」的步驟。
+// 跟 reportToken 是兩條並存的路線：reportToken 保留給舊的pending/confirm/reject流程
+// (例如還沒處理完的既有pending token)，這支是Vote.jsx往後預設會用的新路徑。
+export async function reportAndConfirmToken({ groupId, targetId, targetMember, currentMember, reason }) {
+  assertAuthenticatedMember(currentMember);
+
+  if (!groupId || !targetId || targetId === currentMember.id) {
+    throw new Error('A different target member is required.');
+  }
+  if (targetMember && targetMember.id !== targetId) {
+    throw new Error('The target member identity is invalid.');
+  }
+  if (targetMember?.active === false) {
+    throw new Error('The target member is inactive.');
+  }
+
+  const trimmedReason = typeof reason === 'string' ? reason.trim() : '';
+  if (!trimmedReason) {
+    throw new Error('A reason is required.');
+  }
+  if (trimmedReason.length > 200) {
+    throw new Error('The reason must be 200 characters or fewer.');
+  }
+
+  const tokenRef = doc(collection(db, 'groups', groupId, 'tokens'));
+  const timestamp = serverTimestamp();
+  const batch = writeBatch(db);
+
+  batch.set(tokenRef, {
+    targetId,
+    reporterId: currentMember.id,
+    status: 'confirmed',
+    reason: trimmedReason,
+    createdAt: timestamp,
+    confirmedAt: timestamp,
+    resolvedAt: timestamp,
+  });
+  batch.set(doc(db, 'groups', groupId, 'reports', tokenRef.id), {
+    targetId,
+    reporterId: currentMember.id,
+    reason: trimmedReason,
+    timestamp,
+  });
+
+  await batch.commit();
+  return tokenRef;
+}
+
 export async function resolveToken({ groupId, tokenId, action, currentMember }) {
   assertAuthenticatedMember(currentMember);
 

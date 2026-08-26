@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import piggyModelUrl from '../assets/piggy-bank-glass.glb?url';
 
 const MAX_RENDERED_TOKENS = 80;
 const DEFAULT_TOKEN_COLOR = '#f472b6';
@@ -60,6 +61,33 @@ export function samplePiggyTokens(members, maxRendered = MAX_RENDERED_TOKENS) {
   return { totalCount, renderedCount, tokens };
 }
 
+// 依index找出這顆token該落在哪一層(layer)、那一層的第幾個位置(within)、那一層總共能放幾顆(capacity)。
+// 每層容量依那個高度身體實際的半徑算出來，讓堆疊貼合豬公圓滾滾的體內容積，
+// 不會像固定寬度那樣全部擠在中央一根柱子裡。
+function bodyRadiusAtY(y) {
+  const R = 1.05;
+  const H = 1.35;
+  const clamped = Math.max(-H + 0.001, Math.min(H - 0.001, y));
+  const t = Math.asin(clamped / H);
+  return R * Math.cos(t);
+}
+
+function locateTokenSlot(index) {
+  let layer = 0;
+  let cursor = 0;
+  for (let guard = 0; guard < 60; guard += 1) {
+    const y = -0.78 + layer * 0.16;
+    const availR = bodyRadiusAtY(y);
+    const capacity = Math.max(4, Math.round(availR * 11));
+    if (index < cursor + capacity) {
+      return { layer, within: index - cursor, capacity, targetY: y, availR };
+    }
+    cursor += capacity;
+    layer += 1;
+  }
+  return { layer, within: 0, capacity: 1, targetY: -0.78 + layer * 0.16, availR: 0.3 };
+}
+
 function prefersReducedMotion() {
   return typeof window !== 'undefined'
     && typeof window.matchMedia === 'function'
@@ -104,6 +132,17 @@ function StaticPig({ totalCount, renderedCount, reducedMotion }) {
   );
 }
 
+// 幫每一顆token(五角星星，貼在圓餅正面)算出頂點座標，跟金幣底座一起組成硬幣造型
+function buildStarShapePoints(THREE, outerR, innerR) {
+  const points = [];
+  for (let i = 0; i < 10; i += 1) {
+    const r = i % 2 === 0 ? outerR : innerR;
+    const a = (Math.PI / 5) * i - Math.PI / 2;
+    points.push(new THREE.Vector2(Math.cos(a) * r, Math.sin(a) * r));
+  }
+  return points;
+}
+
 export default function PiggyBank3D({ members = [] }) {
   const hostRef = useRef(null);
   const [reducedMotion, setReducedMotion] = useState(prefersReducedMotion);
@@ -143,14 +182,18 @@ export default function PiggyBank3D({ members = [] }) {
           throw new Error('WebGL unavailable');
         }
 
-        const THREE = await import('three');
+        const [THREE, { GLTFLoader }, { RoomEnvironment }] = await Promise.all([
+          import('three'),
+          import('three/examples/jsm/loaders/GLTFLoader.js'),
+          import('three/examples/jsm/environments/RoomEnvironment.js'),
+        ]);
         if (disposed) {
           return;
         }
 
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
-        camera.position.set(0, 0.45, 6.3);
+        camera.position.set(0, 0.35, 6.6);
         camera.lookAt(0, 0.05, 0);
 
         const renderer = new THREE.WebGLRenderer({
@@ -161,6 +204,8 @@ export default function PiggyBank3D({ members = [] }) {
         renderer.setClearColor(0x000000, 0);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
         renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.1;
         renderer.domElement.className = 'h-full w-full cursor-grab active:cursor-grabbing';
         renderer.domElement.style.touchAction = 'pan-y';
         renderer.domElement.setAttribute('aria-hidden', 'true');
@@ -169,30 +214,20 @@ export default function PiggyBank3D({ members = [] }) {
         const geometries = new Set();
         const materials = new Set();
         let removeInteractionListeners = () => {};
+        let envTexture = null;
         cleanupScene = () => {
           window.cancelAnimationFrame(frameId);
           resizeObserver?.disconnect();
           removeInteractionListeners();
           geometries.forEach((geometry) => geometry.dispose());
           materials.forEach((material) => material.dispose());
+          envTexture?.dispose();
           renderer.renderLists?.dispose();
           renderer.dispose();
           renderer.forceContextLoss?.();
           renderer.domElement.remove();
           scene.clear();
         };
-
-        scene.add(new THREE.HemisphereLight(0xffffff, 0x7c2d12, 2.4));
-        const keyLight = new THREE.DirectionalLight(0xffffff, 3.2);
-        keyLight.position.set(3, 5, 5);
-        scene.add(keyLight);
-        const rimLight = new THREE.PointLight(0xf9a8d4, 18, 10);
-        rimLight.position.set(-3, 1, 3);
-        scene.add(rimLight);
-
-        const pig = new THREE.Group();
-        pig.rotation.y = -0.16;
-        scene.add(pig);
 
         const trackGeometry = (geometry) => {
           geometries.add(geometry);
@@ -202,79 +237,174 @@ export default function PiggyBank3D({ members = [] }) {
           materials.add(material);
           return material;
         };
-        const pinkMaterial = trackMaterial(new THREE.MeshPhysicalMaterial({
-          color: 0xfb7185,
-          transparent: true,
-          opacity: 0.72,
-          roughness: 0.2,
-          metalness: 0.04,
+
+        // 環境貼圖：用three.js官方的RoomEnvironment(合成室內光源場景)產生PMREM，
+        // 讓玻璃的transmission/clearcoat有東西可以反射折射。這是正式repo，
+        // three.js是完整版(0.185)，可以直接用官方addon，不用像demo那樣自己手刻合成場景。
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        envTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+        pmrem.dispose();
+        scene.environment = envTexture;
+
+        scene.add(new THREE.HemisphereLight(0xffffff, 0x7c2d12, 1.6));
+        const keyLight = new THREE.DirectionalLight(0xffffff, 2.4);
+        keyLight.position.set(3, 5, 5);
+        scene.add(keyLight);
+        const rimLight = new THREE.PointLight(0xf9a8d4, 14, 10);
+        rimLight.position.set(-3, 1, 3);
+        scene.add(rimLight);
+
+        const pig = new THREE.Group();
+        scene.add(pig);
+
+        // 兩層材質模擬玻璃厚度透光染色：外層極透光玻璃殼 + 內層飽和色果凍芯(同一份geometry縮小當內層)。
+        // three@0.185支援真正的attenuationColor/ior/iridescence，比demo版(受限於sandbox的舊three)更準確。
+        const outerGlass = trackMaterial(new THREE.MeshPhysicalMaterial({
+          color: 0xf3e9ff,
+          transmission: 0.72,
+          roughness: 0.1,
+          ior: 1.35,
+          thickness: 0.6,
+          attenuationColor: new THREE.Color(0xffb8d9),
+          attenuationDistance: 0.7,
+          iridescence: 0.35,
+          iridescenceIOR: 1.2,
           clearcoat: 1,
-          clearcoatRoughness: 0.12,
-          transmission: 0.08,
-          depthWrite: false,
+          clearcoatRoughness: 0.04,
+          envMapIntensity: 2.4,
+          transparent: true,
+        }));
+        const innerCore = trackMaterial(new THREE.MeshPhysicalMaterial({
+          color: 0xffb8d9,
+          transmission: 0.32,
+          roughness: 0.2,
+          ior: 1.35,
+          clearcoat: 0.6,
+          clearcoatRoughness: 0.06,
+          envMapIntensity: 1.8,
+          transparent: true,
+          opacity: 0.9,
+        }));
+        // 模型本身的五官細節原始是深黑色，改成跟整體品牌一致的飽和粉紅
+        const pinkAccent = trackMaterial(new THREE.MeshPhysicalMaterial({
+          color: 0xff2d7a,
+          transmission: 0.15,
+          roughness: 0.18,
+          clearcoat: 0.9,
+          clearcoatRoughness: 0.1,
+          envMapIntensity: 1.4,
+          transparent: true,
+          opacity: 0.99,
         }));
         const darkMaterial = trackMaterial(new THREE.MeshStandardMaterial({
-          color: 0x1e293b,
-          roughness: 0.45,
-        }));
-        const snoutMaterial = trackMaterial(new THREE.MeshPhysicalMaterial({
-          color: 0xfda4af,
-          roughness: 0.25,
-          clearcoat: 0.8,
-          transparent: true,
-          opacity: 0.88,
+          color: 0x2b2320,
+          roughness: 0.7,
         }));
 
-        function addPart(geometry, material, position, scale = [1, 1, 1], rotation = [0, 0, 0]) {
-          const mesh = new THREE.Mesh(trackGeometry(geometry), material);
-          mesh.position.set(...position);
-          mesh.scale.set(...scale);
-          mesh.rotation.set(...rotation);
-          pig.add(mesh);
-          return mesh;
+        const gltfLoader = new GLTFLoader();
+        const gltf = await gltfLoader.loadAsync(piggyModelUrl);
+        if (disposed) {
+          geometries.forEach((geometry) => geometry.dispose());
+          materials.forEach((material) => material.dispose());
+          envTexture?.dispose();
+          renderer.dispose();
+          return;
         }
 
-        addPart(new THREE.SphereGeometry(1, 32, 24), pinkMaterial, [0, 0, 0], [1.35, 1, 0.95]);
-        addPart(new THREE.SphereGeometry(0.72, 28, 20), pinkMaterial, [0, 0.4, 0.88], [1, 0.92, 0.86]);
-        addPart(new THREE.ConeGeometry(0.3, 0.62, 4), pinkMaterial, [-0.43, 1.02, 1.02], [1, 1, 0.65], [0.12, 0, -0.16]);
-        addPart(new THREE.ConeGeometry(0.3, 0.62, 4), pinkMaterial, [0.43, 1.02, 1.02], [1, 1, 0.65], [0.12, 0, 0.16]);
-        addPart(new THREE.CylinderGeometry(0.34, 0.39, 0.34, 28), snoutMaterial, [0, 0.22, 1.52], [1, 1, 0.72], [Math.PI / 2, 0, 0]);
-        addPart(new THREE.SphereGeometry(0.075, 16, 12), darkMaterial, [-0.24, 0.56, 1.52]);
-        addPart(new THREE.SphereGeometry(0.075, 16, 12), darkMaterial, [0.24, 0.56, 1.52]);
-        addPart(new THREE.SphereGeometry(0.045, 12, 8), darkMaterial, [-0.12, 0.22, 1.77]);
-        addPart(new THREE.SphereGeometry(0.045, 12, 8), darkMaterial, [0.12, 0.22, 1.77]);
-        addPart(new THREE.BoxGeometry(0.78, 0.055, 0.16), darkMaterial, [0, 0.94, 0.05], [1, 1, 1], [0, 0, 0]);
+        // 自動置中：用實際載入的模型bounding box算平移量，不是寫死數字——
+        // 之後模型檔案如果更新替換，這裡不用跟著手動改座標。
+        const box = new THREE.Box3().setFromObject(gltf.scene);
+        const center = box.getCenter(new THREE.Vector3());
+        gltf.scene.position.sub(center);
 
-        for (const x of [-0.68, 0.68]) {
-          for (const z of [-0.42, 0.42]) {
-            addPart(new THREE.CylinderGeometry(0.2, 0.23, 0.65, 18), pinkMaterial, [x, -0.83, z]);
+        // 模型裡有兩個mesh：玻璃身體(含耳朵、腳，同一個連續mesh) + 深色五官細節(眼睛/鼻孔)。
+        // 依mesh的原始材質transparency判斷哪個是玻璃身體(alpha<1)、哪個是五官(alpha=1)，
+        // 比寫死node名稱更耐用，之後模型檔案node命名改變也不會找不到。
+        const meshes = [];
+        gltf.scene.traverse((child) => {
+          if (child.isMesh) {
+            meshes.push(child);
+            trackGeometry(child.geometry);
           }
-        }
+        });
+        meshes.sort((a, b) => b.geometry.attributes.position.count - a.geometry.attributes.position.count);
+        const bodyMesh = meshes[0];
+        const faceMesh = meshes[1];
 
-        const tokenGeometry = trackGeometry(new THREE.CylinderGeometry(0.13, 0.13, 0.055, 18));
-        const tokenMaterials = new Map();
+        if (bodyMesh) {
+          const outerBody = new THREE.Mesh(bodyMesh.geometry, outerGlass);
+          pig.add(outerBody);
+          const innerBody = new THREE.Mesh(bodyMesh.geometry, innerCore);
+          innerBody.scale.setScalar(0.92);
+          pig.add(innerBody);
+        }
+        if (faceMesh) {
+          pig.add(new THREE.Mesh(faceMesh.geometry, pinkAccent));
+        }
+        pig.scale.setScalar(1.55);
+
+        // 投幣孔：模型本身沒有做，這裡補上，直的、由後往前
+        const slotGeometry = trackGeometry(new THREE.BoxGeometry(0.075, 0.03, 0.22));
+        const slot = new THREE.Mesh(slotGeometry, darkMaterial);
+        slot.position.set(0, 0.65, 0.03);
+        pig.add(slot);
+
+        // Token：金幣造型(圓餅底 + 浮雕星星 + 內外兩圈刻紋環)，顏色依成員實際的token顏色，
+        // 不是隨機色——這是跟demo最大的不同，demo是手動按鈕測試用隨機色，這裡要對應真實資料。
+        const tokenGroup = new THREE.Group();
+        pig.add(tokenGroup);
+        const coinBaseGeo = trackGeometry(new THREE.CylinderGeometry(0.15, 0.15, 0.038, 28));
+        const starPoints = buildStarShapePoints(THREE, 0.088, 0.038);
+        const starShape = new THREE.Shape(starPoints);
+        const starGeo = trackGeometry(new THREE.ExtrudeGeometry(starShape, {
+          depth: 0.01, bevelEnabled: true, bevelThickness: 0.003, bevelSize: 0.003, bevelSegments: 1,
+        }));
+        const innerRingGeo = trackGeometry(new THREE.RingGeometry(0.1, 0.111, 32));
+        const outerRingGeo = trackGeometry(new THREE.RingGeometry(0.128, 0.14, 32));
+
         const tokenMeshes = sample.tokens.map((token, index) => {
-          if (!tokenMaterials.has(token.color)) {
-            tokenMaterials.set(token.color, trackMaterial(new THREE.MeshStandardMaterial({
-              color: token.color,
-              metalness: 0.38,
-              roughness: 0.32,
-            })));
-          }
+          const slotInfo = locateTokenSlot(index);
+          const spread = Math.min(slotInfo.availR * 0.78, 1.0);
+          const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+          const angle = slotInfo.within * goldenAngle + slotInfo.layer * 0.6;
+          const r = spread * Math.sqrt((slotInfo.within + 1) / slotInfo.capacity);
+          const targetX = Math.cos(angle) * r;
+          const targetZ = Math.sin(angle) * r;
+          const targetY = slotInfo.targetY;
 
-          const mesh = new THREE.Mesh(tokenGeometry, tokenMaterials.get(token.color));
-          const column = index % 8;
-          const row = Math.floor(index / 8);
-          const targetY = -0.62 + row * 0.105;
-          mesh.position.set(
-            -0.79 + column * 0.225 + Math.sin(index * 2.17) * 0.035,
+          const coin = new THREE.Group();
+          const base = new THREE.Mesh(coinBaseGeo, trackMaterial(new THREE.MeshStandardMaterial({
+            color: token.color, metalness: 0.75, roughness: 0.3,
+          })));
+          coin.add(base);
+          const star = new THREE.Mesh(starGeo, trackMaterial(new THREE.MeshStandardMaterial({
+            color: token.color, metalness: 0.35, roughness: 0.5,
+          })));
+          star.rotation.x = -Math.PI / 2;
+          star.position.y = 0.02 + 0.005;
+          coin.add(star);
+          const ringColor = new THREE.Color(token.color).multiplyScalar(0.7);
+          const ringMat = trackMaterial(new THREE.MeshStandardMaterial({
+            color: ringColor, metalness: 0.6, roughness: 0.42, side: THREE.DoubleSide,
+          }));
+          const innerRing = new THREE.Mesh(innerRingGeo, ringMat);
+          innerRing.rotation.x = -Math.PI / 2;
+          innerRing.position.y = 0.021;
+          coin.add(innerRing);
+          const outerRing = new THREE.Mesh(outerRingGeo, ringMat);
+          outerRing.rotation.x = -Math.PI / 2;
+          outerRing.position.y = 0.021;
+          coin.add(outerRing);
+
+          coin.rotation.set(Math.sin(index) * 0.3, 0, index * 0.7);
+          coin.userData.targetY = targetY;
+          coin.position.set(
+            targetX,
             reducedMotion ? targetY : 1.8 + (index % 9) * 0.12,
-            -0.35 + (index % 5) * 0.17,
+            targetZ,
           );
-          mesh.rotation.set(Math.PI / 2, 0, index * 0.61);
-          mesh.userData.targetY = targetY;
-          pig.add(mesh);
-          return mesh;
+          tokenGroup.add(coin);
+          return coin;
         });
 
         const render = () => renderer.render(scene, camera);
@@ -293,6 +423,7 @@ export default function PiggyBank3D({ members = [] }) {
 
         let dragging = false;
         let pointerX = 0;
+        let angularVelocity = 0.00016;
         const handlePointerDown = (event) => {
           dragging = true;
           pointerX = event.clientX;
@@ -306,6 +437,7 @@ export default function PiggyBank3D({ members = [] }) {
           const deltaX = event.clientX - pointerX;
           pointerX = event.clientX;
           pig.rotation.y += deltaX * 0.012;
+          angularVelocity = deltaX * 0.012;
           render();
         };
         const handlePointerUp = (event) => {
@@ -342,14 +474,16 @@ export default function PiggyBank3D({ members = [] }) {
             const delta = Math.min(40, time - previousTime);
             previousTime = time;
             if (!dragging) {
-              pig.rotation.y += delta * 0.00016;
+              pig.rotation.y += angularVelocity;
+              angularVelocity *= 0.95;
+              if (Math.abs(angularVelocity) < 0.00012) angularVelocity = 0.00016;
             }
 
             const progress = Math.min(1, (time - startedAt) / 950);
             const eased = 1 - ((1 - progress) ** 3);
-            for (const mesh of tokenMeshes) {
-              const startY = 1.8 + (mesh.userData.targetY * -0.25);
-              mesh.position.y = startY + (mesh.userData.targetY - startY) * eased;
+            for (const coin of tokenMeshes) {
+              const startY = 1.8 + (coin.userData.targetY * -0.25);
+              coin.position.y = startY + (coin.userData.targetY - startY) * eased;
             }
             render();
             frameId = window.requestAnimationFrame(animate);
@@ -358,8 +492,9 @@ export default function PiggyBank3D({ members = [] }) {
         } else {
           render();
         }
-      } catch {
+      } catch (err) {
         if (!disposed) {
+          console.error('PiggyBank3D 初始化失敗，改用靜態小豬：', err);
           cleanupScene();
           setRenderFailed(true);
         }

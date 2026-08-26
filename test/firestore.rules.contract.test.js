@@ -31,3 +31,28 @@ test('rules encode authenticated token transitions and atomic report creation', 
   assert.match(rules, /request\.resource\.data\.timestamp == request\.time/);
   assert.match(rules, /allow update, delete:\s*if false/);
 });
+
+test('rules support the new direct-confirm flow (reporter selects target + reason, no separate confirmation step)', () => {
+  assert.match(rules, /function validReasonValue\(reason\)/);
+  assert.match(rules, /reason\.size\(\) > 0 && reason\.size\(\) <= 200/);
+  assert.match(rules, /function validDirectConfirmedTokenCreate\(groupId, tokenId\)/);
+  assert.match(rules, /function validDirectReportCreate\(groupId, tokenId\)/);
+  assert.match(rules, /function matchingDirectReportAfter\(groupId, tokenId\)/);
+  // 核心行為差異：新流程檢查的是reporterId是不是本人，不是targetId——
+  // 這一行如果消失或改成targetId，代表新流程又變回「要對方確認」的舊模型了。
+  assert.match(
+    rules,
+    /validDirectConfirmedTokenCreate[\s\S]*?isMember\(groupId, request\.resource\.data\.reporterId\)[\s\S]*?matchingDirectReportAfter/,
+  );
+  assert.match(
+    rules,
+    /allow create:\s*if validTokenCreate\(groupId\) \|\| validDirectConfirmedTokenCreate\(groupId, tokenId\)/,
+  );
+  assert.match(
+    rules,
+    /allow create:\s*if validReportCreate\(groupId, tokenId\) \|\| validDirectReportCreate\(groupId, tokenId\)/,
+  );
+  // 舊的雙方確認機制必須原封不動保留，兩條路線並存
+  assert.match(rules, /function validTokenUpdate\(groupId, tokenId\)/);
+  assert.match(rules, /isMember\(groupId, resource\.data\.targetId\)/);
+});

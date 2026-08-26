@@ -9,7 +9,7 @@ const authState = vi.hoisted(() => ({
 
 const useGroupMock = vi.hoisted(() => vi.fn());
 const useTokensMock = vi.hoisted(() => vi.fn());
-const reportTokenMock = vi.hoisted(() => vi.fn());
+const reportAndConfirmTokenMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../store/authStore.js', () => ({
   useAuthStore: (selector) => selector(authState),
@@ -26,7 +26,7 @@ vi.mock('../hooks/useTokens.js', () => ({
 }));
 
 vi.mock('../services/tokenService.js', () => ({
-  reportToken: reportTokenMock,
+  reportAndConfirmToken: reportAndConfirmTokenMock,
 }));
 
 import Vote from './Vote.jsx';
@@ -60,7 +60,7 @@ beforeEach(() => {
   authState.groupId = 'main';
   useGroupMock.mockReset();
   useTokensMock.mockReset();
-  reportTokenMock.mockReset();
+  reportAndConfirmTokenMock.mockReset();
   useGroupMock.mockReturnValue({
     members: [],
     loading: false,
@@ -167,7 +167,64 @@ describe('Vote page', () => {
     expect(screen.getByRole('button', { name: '請先選擇成員' }).disabled).toBe(true);
   });
 
-  it('disables selection changes and repeat submits while a report is pending, then resets on success', async () => {
+  it('selecting a member enables the confirm button, which opens the reason modal', async () => {
+    const user = userEvent.setup();
+
+    useGroupMock.mockReturnValue({
+      members: [
+        { id: 'self', name: '自己', active: true },
+        { id: 'active-1', name: '小華', active: true, avatar: 'cat' },
+      ],
+      loading: false,
+      error: null,
+    });
+
+    renderVote();
+
+    const huaButton = screen.getByRole('button', { name: /小華/ });
+    await user.click(huaButton);
+
+    expect(huaButton.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText('目前選擇：小華')).toBeTruthy();
+
+    const confirmButton = screen.getByRole('button', { name: '確認：小華' });
+    expect(confirmButton.disabled).toBe(false);
+    await user.click(confirmButton);
+
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByText('這一枚 Token 會記在小華名下。')).toBeTruthy();
+  });
+
+  it('requires a non-empty reason before the save button is enabled, and cancel closes without saving', async () => {
+    const user = userEvent.setup();
+
+    useGroupMock.mockReturnValue({
+      members: [
+        { id: 'self', name: '自己', active: true },
+        { id: 'active-1', name: '小華', active: true, avatar: 'cat' },
+      ],
+      loading: false,
+      error: null,
+    });
+
+    renderVote();
+
+    await user.click(screen.getByRole('button', { name: /小華/ }));
+    await user.click(screen.getByRole('button', { name: '確認：小華' }));
+
+    const saveButton = screen.getByRole('button', { name: '儲存' });
+    expect(saveButton.disabled).toBe(true);
+
+    await user.type(screen.getByLabelText('原因說明'), '聊到deadline');
+    expect(saveButton.disabled).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: '取消' }));
+
+    expect(screen.queryByRole('dialog')).toBe(null);
+    expect(reportAndConfirmTokenMock).not.toHaveBeenCalled();
+  });
+
+  it('saves the reason, calls reportAndConfirmToken, and resets selection on success', async () => {
     const user = userEvent.setup();
     const deferred = createDeferred();
 
@@ -180,48 +237,39 @@ describe('Vote page', () => {
       loading: false,
       error: null,
     });
-    reportTokenMock.mockReturnValue(deferred.promise);
+    reportAndConfirmTokenMock.mockReturnValue(deferred.promise);
 
     renderVote();
 
     const huaButton = screen.getByRole('button', { name: /小華/ });
     const mingButton = screen.getByRole('button', { name: /阿明/ });
-    const submitButton = screen.getByRole('button', { name: '請先選擇成員' });
 
     await user.click(huaButton);
+    await user.click(screen.getByRole('button', { name: '確認：小華' }));
+    await user.type(screen.getByLabelText('原因說明'), '午餐時間聊到deadline');
+    await user.click(screen.getByRole('button', { name: '儲存' }));
 
-    expect(huaButton.getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByText('目前選擇：小華')).toBeTruthy();
-    expect(submitButton.textContent).toBe('送出一票');
-    expect(submitButton.disabled).toBe(false);
-
-    await user.click(submitButton);
-
-    expect(reportTokenMock).toHaveBeenCalledTimes(1);
-    expect(reportTokenMock).toHaveBeenCalledWith({
+    expect(reportAndConfirmTokenMock).toHaveBeenCalledTimes(1);
+    expect(reportAndConfirmTokenMock).toHaveBeenCalledWith({
       groupId: 'main',
       targetId: 'active-1',
       targetMember: { id: 'active-1', name: '小華', active: true, avatar: 'cat' },
       currentMember: authState.currentMember,
+      reason: '午餐時間聊到deadline',
     });
-    expect(huaButton.disabled).toBe(true);
-    expect(mingButton.disabled).toBe(true);
-    expect(submitButton.disabled).toBe(true);
-    expect(submitButton.textContent).toBe('送出中…');
-
-    await user.click(submitButton);
-    expect(reportTokenMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: '儲存中…' }).disabled).toBe(true);
 
     deferred.resolve({ id: 'token-1' });
 
-    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('已送出給小華的一票'));
+    await waitFor(() => expect(screen.getByRole('status').textContent).toContain('已將一枚屬於小華的 Token 投入豬公'));
 
+    expect(screen.queryByRole('dialog')).toBe(null);
     expect(screen.getByText('請先選擇一位成員')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /小華/ }).getAttribute('aria-pressed')).toBe('false');
-    expect(screen.getByRole('button', { name: '請先選擇成員' }).disabled).toBe(true);
+    expect(huaButton.getAttribute('aria-pressed')).toBe('false');
+    expect(mingButton.disabled).toBe(false);
   });
 
-  it('shows safe load and submit errors without exposing raw failures', async () => {
+  it('shows safe load and save errors without exposing raw failures', async () => {
     const user = userEvent.setup();
 
     useGroupMock.mockReturnValue({
@@ -248,19 +296,22 @@ describe('Vote page', () => {
       loading: false,
       error: null,
     });
-    reportTokenMock.mockRejectedValue(new Error('do not leak this'));
+    reportAndConfirmTokenMock.mockRejectedValue(new Error('do not leak this'));
 
     cleanup();
     renderVote();
 
     await user.click(screen.getByRole('button', { name: /小華/ }));
-    await user.click(screen.getByRole('button', { name: '送出一票' }));
+    await user.click(screen.getByRole('button', { name: '確認：小華' }));
+    await user.type(screen.getByLabelText('原因說明'), '聊到deadline');
+    await user.click(screen.getByRole('button', { name: '儲存' }));
 
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('目前無法送出這一票'));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('目前無法儲存這筆紀錄'));
 
     expect(screen.queryByText('do not leak this')).toBe(null);
-    expect(screen.getByRole('button', { name: /小華/ }).disabled).toBe(false);
-    expect(screen.getByRole('button', { name: '送出一票' }).disabled).toBe(false);
+    // 失敗後modal要留著，讓使用者不用重打一次原因
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByLabelText('原因說明').value).toBe('聊到deadline');
   });
 
   it('keeps the member card keyboard focus visible with a high-contrast outline', async () => {
