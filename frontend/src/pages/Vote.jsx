@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import MemberAvatar from '../components/MemberAvatar.jsx';
 import { useGroup } from '../hooks/useGroup.js';
 import { useTokens } from '../hooks/useTokens.js';
@@ -32,6 +33,7 @@ function toSafeLoadMessage(error) {
 }
 
 export default function Vote() {
+  const navigate = useNavigate();
   const currentMember = useAuthStore((state) => state.currentMember);
   const groupId = useAuthStore((state) => state.groupId);
   const { members, loading: groupLoading, error: groupError } = useGroup(groupId);
@@ -142,6 +144,9 @@ export default function Vote() {
         tone: 'success',
         message: `已將一枚屬於${memberName}的 Token 投入豬公。`,
       });
+      setTimeout(() => {
+        navigate('/');
+      }, 1500);
     } catch {
       setModalError(SAFE_SUBMIT_ERROR_MESSAGE);
     } finally {
@@ -273,12 +278,12 @@ export default function Vote() {
       </div>
 
       {modalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 px-4 pb-4 sm:items-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 overflow-y-auto">
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="reason-modal-title"
-            className="w-full max-w-sm rounded-[1.75rem] bg-white p-6 shadow-2xl"
+            className="my-auto w-full max-w-sm rounded-[1.75rem] bg-white p-6 shadow-2xl"
           >
             <h2 id="reason-modal-title" className="text-lg font-bold text-slate-900">
               違規原因
@@ -291,6 +296,43 @@ export default function Vote() {
               <label htmlFor="violation-reason" className="text-sm font-medium text-slate-700">
                 原因說明
               </label>
+
+              <div className="mt-2 mb-3 flex gap-2">
+                {[
+                  { id: 'teams', label: '偷看teams', value: '偷看teams' },
+                  { id: 'progress', label: '詢問進度', value: '詢問進度' },
+                  { id: 'other', label: '其他', value: '' },
+                ].map((opt) => {
+                  const active =
+                    (opt.id === 'teams' && reason === '偷看teams') ||
+                    (opt.id === 'progress' && reason === '詢問進度') ||
+                    (opt.id === 'other' && reason !== '偷看teams' && reason !== '詢問進度');
+
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      disabled={pending}
+                      onClick={() => {
+                        if (opt.id !== 'other') {
+                          setReason(opt.value);
+                        } else {
+                          setReason('');
+                          reasonInputRef.current?.focus();
+                        }
+                      }}
+                      className={`flex-1 rounded-full py-2 text-xs font-semibold border transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                        active
+                          ? 'bg-slate-950 text-white border-slate-950'
+                          : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+
               <textarea
                 id="violation-reason"
                 ref={reasonInputRef}
@@ -300,7 +342,7 @@ export default function Vote() {
                 maxLength={REASON_MAX_LENGTH}
                 rows={3}
                 placeholder="例如：午餐時間聊到deadline"
-                className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-50"
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-50"
               />
               <p className="mt-1 text-right text-xs text-slate-400">
                 {trimmedReason.length}/{REASON_MAX_LENGTH}

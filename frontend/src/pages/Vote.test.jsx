@@ -10,6 +10,11 @@ const authState = vi.hoisted(() => ({
 const useGroupMock = vi.hoisted(() => vi.fn());
 const useTokensMock = vi.hoisted(() => vi.fn());
 const reportAndConfirmTokenMock = vi.hoisted(() => vi.fn());
+const navigateMock = vi.hoisted(() => vi.fn());
+
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => navigateMock,
+}));
 
 vi.mock('../store/authStore.js', () => ({
   useAuthStore: (selector) => selector(authState),
@@ -61,6 +66,7 @@ beforeEach(() => {
   useGroupMock.mockReset();
   useTokensMock.mockReset();
   reportAndConfirmTokenMock.mockReset();
+  navigateMock.mockReset();
   useGroupMock.mockReturnValue({
     members: [],
     loading: false,
@@ -263,10 +269,45 @@ describe('Vote page', () => {
 
     await waitFor(() => expect(screen.getByRole('status').textContent).toContain('已將一枚屬於小華的 Token 投入豬公'));
 
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/'), { timeout: 2500 });
+
     expect(screen.queryByRole('dialog')).toBe(null);
     expect(screen.getByText('請先選擇一位成員')).toBeTruthy();
     expect(huaButton.getAttribute('aria-pressed')).toBe('false');
     expect(mingButton.disabled).toBe(false);
+  });
+
+  it('allows choosing preset options or other custom text', async () => {
+    const user = userEvent.setup();
+
+    useGroupMock.mockReturnValue({
+      members: [
+        { id: 'self', name: '自己', active: true },
+        { id: 'active-1', name: '小華', active: true, avatar: 'cat' },
+      ],
+      loading: false,
+      error: null,
+    });
+
+    renderVote();
+
+    await user.click(screen.getByRole('button', { name: /小華/ }));
+    await user.click(screen.getByRole('button', { name: '確認：小華' }));
+
+    const textarea = screen.getByLabelText('原因說明');
+    expect(textarea.value).toBe('');
+
+    const teamsBtn = screen.getByRole('button', { name: '偷看teams' });
+    await user.click(teamsBtn);
+    expect(textarea.value).toBe('偷看teams');
+
+    const progressBtn = screen.getByRole('button', { name: '詢問進度' });
+    await user.click(progressBtn);
+    expect(textarea.value).toBe('詢問進度');
+
+    const otherBtn = screen.getByRole('button', { name: '其他' });
+    await user.click(otherBtn);
+    expect(textarea.value).toBe('');
   });
 
   it('shows safe load and save errors without exposing raw failures', async () => {
