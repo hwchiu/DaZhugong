@@ -311,12 +311,6 @@ export default function PiggyBank3D({ members = [] }) {
           return;
         }
 
-        // 自動置中：用實際載入的模型bounding box算平移量，不是寫死數字——
-        // 之後模型檔案如果更新替換，這裡不用跟著手動改座標。
-        const box = new THREE.Box3().setFromObject(gltf.scene);
-        const center = box.getCenter(new THREE.Vector3());
-        gltf.scene.position.sub(center);
-
         // 模型裡有兩個mesh：玻璃身體(含耳朵、腳，同一個連續mesh) + 深色五官細節(眼睛/鼻孔)。
         // 依mesh的原始材質transparency判斷哪個是玻璃身體(alpha<1)、哪個是五官(alpha=1)，
         // 比寫死node名稱更耐用，之後模型檔案node命名改變也不會找不到。
@@ -331,8 +325,14 @@ export default function PiggyBank3D({ members = [] }) {
         const bodyMesh = meshes[0];
         const faceMesh = meshes[1];
 
+        // 計算未縮放(Raw)幾何體的 bounding box & center，確保定位與硬幣及投幣孔完美對齊
+        const rawBox = new THREE.Box3();
+        if (bodyMesh) rawBox.expandByObject(new THREE.Mesh(bodyMesh.geometry));
+        if (faceMesh) rawBox.expandByObject(new THREE.Mesh(faceMesh.geometry));
+        const rawCenter = rawBox.getCenter(new THREE.Vector3());
+
         if (bodyMesh) {
-          bodyMesh.geometry.translate(-center.x, -center.y, -center.z);
+          bodyMesh.geometry.translate(-rawCenter.x, -rawCenter.y, -rawCenter.z);
           const outerBody = new THREE.Mesh(bodyMesh.geometry, outerGlass);
           pig.add(outerBody);
           const innerBody = new THREE.Mesh(bodyMesh.geometry, innerCore);
@@ -340,7 +340,7 @@ export default function PiggyBank3D({ members = [] }) {
           pig.add(innerBody);
         }
         if (faceMesh) {
-          faceMesh.geometry.translate(-center.x, -center.y, -center.z);
+          faceMesh.geometry.translate(-rawCenter.x, -rawCenter.y, -rawCenter.z);
           pig.add(new THREE.Mesh(faceMesh.geometry, pinkAccent));
         }
         pig.scale.setScalar(1.15);
@@ -348,7 +348,7 @@ export default function PiggyBank3D({ members = [] }) {
         // 投幣孔：模型本身沒有做，這裡補上，直的、由後往前
         const slotGeometry = trackGeometry(new THREE.BoxGeometry(0.075, 0.03, 0.22));
         const slot = new THREE.Mesh(slotGeometry, darkMaterial);
-        slot.position.set(0, 0.65, 0.03);
+        slot.position.set(0, 1.35, 0.03);
         pig.add(slot);
 
         // Token：金幣造型(圓餅底 + 浮雕星星 + 內外兩圈刻紋環)，顏色依成員實際的token顏色，
