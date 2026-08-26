@@ -332,6 +332,7 @@ export default function PiggyBank3D({ members = [] }) {
         const faceMesh = meshes[1];
 
         if (bodyMesh) {
+          bodyMesh.geometry.translate(-center.x, -center.y, -center.z);
           const outerBody = new THREE.Mesh(bodyMesh.geometry, outerGlass);
           pig.add(outerBody);
           const innerBody = new THREE.Mesh(bodyMesh.geometry, innerCore);
@@ -339,9 +340,10 @@ export default function PiggyBank3D({ members = [] }) {
           pig.add(innerBody);
         }
         if (faceMesh) {
+          faceMesh.geometry.translate(-center.x, -center.y, -center.z);
           pig.add(new THREE.Mesh(faceMesh.geometry, pinkAccent));
         }
-        pig.scale.setScalar(1.55);
+        pig.scale.setScalar(1.15);
 
         // 投幣孔：模型本身沒有做，這裡補上，直的、由後往前
         const slotGeometry = trackGeometry(new THREE.BoxGeometry(0.075, 0.03, 0.22));
