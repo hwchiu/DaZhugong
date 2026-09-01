@@ -9,6 +9,7 @@ const authState = vi.hoisted(() => ({
 }));
 
 const useGroupMock = vi.hoisted(() => vi.fn());
+const useTokensMock = vi.hoisted(() => vi.fn());
 const piggyState = vi.hoisted(() => ({ shouldThrow: false }));
 
 vi.mock('../store/authStore.js', () => ({
@@ -20,12 +21,26 @@ vi.mock('../hooks/useGroup.js', () => ({
   default: useGroupMock,
 }));
 
+vi.mock('../hooks/useTokens.js', () => ({
+  useTokens: useTokensMock,
+  default: useTokensMock,
+}));
+
 vi.mock('../components/PendingBanner.jsx', () => ({
   default: () => null,
 }));
 
 vi.mock('../components/DateWeatherBar.jsx', () => ({
-  default: () => <div>日期天氣資訊</div>,
+  default: () => <div>天氣資訊</div>,
+}));
+
+vi.mock('../components/LiveClock.jsx', () => ({
+  default: () => <div>時間資訊</div>,
+}));
+
+vi.mock('../data/greetings.js', () => ({
+  pickRandomGreeting: () => '測試用招呼語',
+  LUNCH_GREETINGS: ['測試用招呼語'],
 }));
 
 vi.mock('../components/PiggyBank3D.jsx', () => ({
@@ -64,10 +79,16 @@ beforeEach(() => {
   authState.groupId = 'main';
   piggyState.shouldThrow = false;
   useGroupMock.mockReset();
+  useTokensMock.mockReset();
   useGroupMock.mockReturnValue({
     members: [
       { id: 'self', name: '自己', active: true, color: '#ec4899', totalTokens: 1 },
     ],
+    loading: false,
+    error: null,
+  });
+  useTokensMock.mockReturnValue({
+    tokens: [],
     loading: false,
     error: null,
   });

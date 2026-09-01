@@ -59,7 +59,7 @@ describe('App', () => {
       currentMember: { id: 'member-1', name: '你' },
     });
 
-    expect(screen.getByText('嗨，你，午餐禁聊公事罰金箱')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '午餐禁聊公事罰金箱' })).toBeTruthy();
     expect(screen.getByRole('link', { name: '首頁' }).getAttribute('aria-current')).toBe('page');
   });
 
