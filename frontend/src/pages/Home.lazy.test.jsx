@@ -24,6 +24,10 @@ vi.mock('../components/PendingBanner.jsx', () => ({
   default: () => null,
 }));
 
+vi.mock('../components/DateWeatherBar.jsx', () => ({
+  default: () => <div>日期天氣資訊</div>,
+}));
+
 vi.mock('../components/PiggyBank3D.jsx', () => ({
   default: ({ members }) => {
     if (piggyState.shouldThrow) {

@@ -37,3 +37,15 @@ body {
     min-height: calc(100dvh - env(safe-area-inset-bottom, 0px) - 5.5rem);
   }
 }
+
+.home-hero {
+  height: calc(100vh - env(safe-area-inset-bottom, 0px) - 5.5rem);
+  padding-top: calc(env(safe-area-inset-top, 0px) + 1rem);
+  padding-bottom: 1rem;
+}
+
+@supports (height: 100dvh) {
+  .home-hero {
+    height: calc(100dvh - env(safe-area-inset-bottom, 0px) - 5.5rem);
+  }
+}
