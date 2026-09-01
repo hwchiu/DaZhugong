@@ -311,15 +311,8 @@ export default function PiggyBank3D({ members = [] }) {
           return;
         }
 
-        // 自動置中：用實際載入的模型bounding box算平移量，不是寫死數字——
-        // 之後模型檔案如果更新替換，這裡不用跟著手動改座標。
-        const box = new THREE.Box3().setFromObject(gltf.scene);
-        const center = box.getCenter(new THREE.Vector3());
-        gltf.scene.position.sub(center);
-
-        // 模型裡有兩個mesh：玻璃身體(含耳朵、腳，同一個連續mesh) + 深色五官細節(眼睛/鼻孔)。
-        // 依mesh的原始材質transparency判斷哪個是玻璃身體(alpha<1)、哪個是五官(alpha=1)，
-        // 比寫死node名稱更耐用，之後模型檔案node命名改變也不會找不到。
+        // 自動置中：用模型「自己本地座標」的bounding box算平移量，不是套用過模型內建校正
+        // transform的世界座標——這正是原本的bug所在，修法解釋見下方。
         const meshes = [];
         gltf.scene.traverse((child) => {
           if (child.isMesh) {
@@ -332,15 +325,31 @@ export default function PiggyBank3D({ members = [] }) {
         const faceMesh = meshes[1];
 
         if (bodyMesh) {
-          bodyMesh.geometry.translate(-center.x, -center.y, -center.z);
+          // 修法：改用 bodyMesh.geometry 自己的 local bounding box 中心來置中，
+          // 不要用 Box3().setFromObject(gltf.scene)。原本那個算出來的是「已經套用模型內建
+          // 校正transform」之後的世界座標（這個.glb本身有一個把整個模型縮小約0.03倍的
+          // 校正節點），跟後面直接拿去用的 bodyMesh.geometry（原始、未經校正、跨距達2.84）
+          // 完全是兩個不同尺度的座標系。用世界座標的極小center(y≈0.044)去平移一個跨距2.84
+          // 的geometry幾乎沒有效果，導致身體整個往上偏移超出相機可視範圍(y落在-0.05~3.22，
+          // 而不是應該以0為中心對稱的-1.42~1.42)，硬幣的目標座標(bodyRadiusAtY/locateTokenSlot
+          // 假設身體以0為中心、跨距約±1.35)因此完全對不上身體實際位置。
+          bodyMesh.geometry.computeBoundingBox();
+          const localCenter = bodyMesh.geometry.boundingBox.getCenter(new THREE.Vector3());
+          bodyMesh.geometry.translate(-localCenter.x, -localCenter.y, -localCenter.z);
           const outerBody = new THREE.Mesh(bodyMesh.geometry, outerGlass);
           pig.add(outerBody);
           const innerBody = new THREE.Mesh(bodyMesh.geometry, innerCore);
           innerBody.scale.setScalar(0.92);
           pig.add(innerBody);
-        }
-        if (faceMesh) {
-          faceMesh.geometry.translate(-center.x, -center.y, -center.z);
+
+          if (faceMesh) {
+            // 五官細節要用「跟身體同一組」的置中offset，不要各自算自己的bounding box中心——
+            // 原始檔案裡身體跟五官本來就共用同一個座標系(五官是貼在身體前方特定位置的獨立mesh)，
+            // 各自置中會讓五官偏移到跟身體對不上的地方。
+            faceMesh.geometry.translate(-localCenter.x, -localCenter.y, -localCenter.z);
+            pig.add(new THREE.Mesh(faceMesh.geometry, pinkAccent));
+          }
+        } else if (faceMesh) {
           pig.add(new THREE.Mesh(faceMesh.geometry, pinkAccent));
         }
         pig.scale.setScalar(1.15);
