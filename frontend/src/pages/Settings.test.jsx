@@ -24,6 +24,7 @@ afterEach(cleanup);
 
 beforeEach(() => {
   authState.logout.mockReset();
+  authState.currentMember = { id: 'self', name: '自己', active: true };
   useGroupMock.mockReset();
   useGroupMock.mockReturnValue({
     group: { id: 'main', lunchStart: '12:00', lunchEnd: '13:00' },
@@ -85,5 +86,62 @@ describe('Settings page', () => {
     rerender(<Settings />);
     expect(screen.getByRole('alert').textContent).toContain('目前無法載入設定');
     expect(screen.queryByText('secret')).toBe(null);
+  });
+
+  it('opens a popup with the matching member card image when clicking a member with a real avatar, and closes on backdrop click', async () => {
+    const user = userEvent.setup();
+    useGroupMock.mockReturnValue({
+      group: { id: 'main', lunchStart: '12:00', lunchEnd: '13:00' },
+      members: [
+        { id: 'self', name: '自己', active: true, totalTokens: 2 },
+        { id: 'huye', name: '虎爺', active: true, totalTokens: 9 },
+      ],
+      loading: false,
+      error: null,
+    });
+
+    render(<Settings />);
+
+    const huyeButton = screen.getByRole('button', { name: '查看虎爺的角色卡' });
+    await user.click(huyeButton);
+
+    const dialog = screen.getByRole('dialog', { name: '虎爺 角色卡' });
+    expect(dialog.textContent).toContain('虎爺・虎爺');
+    expect(dialog.querySelector('img')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '關閉' }));
+    expect(screen.queryByRole('dialog')).toBe(null);
+  });
+
+  it('does not make a member row clickable when there is no matching real avatar', () => {
+    useGroupMock.mockReturnValue({
+      group: { id: 'main', lunchStart: '12:00', lunchEnd: '13:00' },
+      members: [
+        { id: 'self', name: '自己', active: true, totalTokens: 2 },
+        { id: 'friend', name: '阿明', active: true, totalTokens: 5 },
+      ],
+      loading: false,
+      error: null,
+    });
+
+    render(<Settings />);
+
+    expect(screen.queryByRole('button', { name: '阿明' })).toBe(null);
+    expect(screen.getByText('阿明')).toBeTruthy();
+  });
+
+  it('shows the account box avatar only for a signed-in identity with a matching real character card', () => {
+    useGroupMock.mockReturnValue({
+      group: { id: 'main', lunchStart: '12:00', lunchEnd: '13:00' },
+      members: [{ id: 'sherry', name: '房產大亨', active: true, totalTokens: 1 }],
+      loading: false,
+      error: null,
+    });
+    authState.currentMember = { id: 'sherry', name: '房產大亨', active: true };
+
+    render(<Settings />);
+
+    const accountSection = screen.getByText('目前登入：房產大亨').closest('section');
+    expect(within(accountSection).getByRole('img', { name: '房產大亨' })).toBeTruthy();
   });
 });

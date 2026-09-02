@@ -41,4 +41,25 @@ describe('MemberAvatar', () => {
     expect(avatar.textContent).toContain('🐱');
     expect(screen.queryByText('Kevin')).toBe(null);
   });
+
+  it('renders a circular photo avatar (no emoji) for members with a matching real character card', () => {
+    render(<MemberAvatar member={{ id: 'm1', name: '虎爺', color: '#f59e0b' }} size="sm" />);
+
+    const avatar = screen.getByRole('img', { name: '虎爺' });
+    expect(avatar.tagName).toBe('IMG');
+    expect(avatar.className).toContain('rounded-full');
+  });
+
+  it('keeps the photo avatar clickable as a button when onClick is provided', async () => {
+    const user = userEvent.setup();
+    const onClick = vi.fn();
+
+    render(<MemberAvatar member={{ id: 'm2', name: 'Darren', color: '#0ea5e9' }} onClick={onClick} size="md" />);
+
+    const avatarButton = screen.getByRole('button', { name: 'Darren' });
+    expect(avatarButton.querySelector('img')).toBeTruthy();
+
+    await user.click(avatarButton);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
 });

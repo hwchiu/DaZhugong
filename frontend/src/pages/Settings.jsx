@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import MemberAvatar from '../components/MemberAvatar.jsx';
+import { getMemberAvatarProfile } from '../data/memberAvatars.js';
 import { useGroup } from '../hooks/useGroup.js';
 import { useAuthStore } from '../store/authStore.js';
 
@@ -23,6 +25,38 @@ function rankMembers(members) {
   ));
 }
 
+// 點成員的框跳出來的角色卡大圖彈窗，點背景關閉
+function MemberCardModal({ member, profile, onClose }) {
+  const memberName = getMemberName(member);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${memberName} 角色卡`}
+        onClick={(event) => event.stopPropagation()}
+        className="w-full max-w-md overflow-hidden rounded-[1.75rem] bg-slate-950 shadow-2xl"
+      >
+        <img src={profile.full} alt={`${memberName}（${profile.label}）角色卡`} className="w-full" />
+        <div className="flex items-center justify-between gap-3 p-4">
+          <p className="font-bold text-white">{memberName}・{profile.label}</p>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20"
+          >
+            關閉
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Settings() {
   const currentMember = useAuthStore((state) => state.currentMember);
   const groupId = useAuthStore((state) => state.groupId);
@@ -30,6 +64,7 @@ export default function Settings() {
   const { group, members, loading, error } = useGroup(groupId);
   const [logoutPending, setLogoutPending] = useState(false);
   const [logoutError, setLogoutError] = useState('');
+  const [cardMember, setCardMember] = useState(null);
   const activeMembers = useMemo(
     () => rankMembers(members.filter((member) => member.active === true)),
     [members],
@@ -45,6 +80,8 @@ export default function Settings() {
   const lunchTime = group?.lunchStart && group?.lunchEnd
     ? `${group.lunchStart}–${group.lunchEnd}`
     : '尚未設定';
+  const currentMemberProfile = getMemberAvatarProfile(getMemberName(currentMember));
+  const cardMemberProfile = cardMember ? getMemberAvatarProfile(getMemberName(cardMember)) : null;
 
   async function handleLogout() {
     if (logoutPending || typeof logout !== 'function') {
@@ -73,7 +110,12 @@ export default function Settings() {
 
         <section className="rounded-[2rem] bg-slate-950 p-6 text-white shadow-lg shadow-slate-300">
           <p className="text-sm font-semibold uppercase tracking-[0.24em] text-rose-200">帳號</p>
-          <h2 className="mt-3 text-xl font-black">目前登入：{getMemberName(currentMember)}</h2>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <h2 className="text-xl font-black">目前登入：{getMemberName(currentMember)}</h2>
+            {currentMemberProfile ? (
+              <MemberAvatar member={currentMember} size="sm" />
+            ) : null}
+          </div>
           <p className="mt-2 text-sm leading-6 text-slate-200">此頁僅供檢視，不提供成員或群組管理。</p>
         </section>
 
@@ -107,13 +149,38 @@ export default function Settings() {
               </div>
               {activeMembers.length ? (
                 <ol aria-label="進行中成員排名" className="mt-4 space-y-3">
-                  {activeMembers.map((member, index) => (
-                    <li key={member.id} className="flex items-center gap-3 rounded-[1.5rem] border border-slate-200 px-4 py-3">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-950 text-sm font-black text-white">{index + 1}</span>
-                      <span className="min-w-0 flex-1 truncate font-bold text-slate-950">{getMemberName(member)}</span>
-                      <span className="font-black tabular-nums text-slate-950">{getTokenCount(member)} Token</span>
-                    </li>
-                  ))}
+                  {activeMembers.map((member, index) => {
+                    const profile = getMemberAvatarProfile(getMemberName(member));
+                    const rowContent = (
+                      <>
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-950 text-sm font-black text-white">{index + 1}</span>
+                        <MemberAvatar member={member} size="sm" />
+                        <span className="min-w-0 flex-1 truncate text-left font-bold text-slate-950">{getMemberName(member)}</span>
+                        <span className="font-black tabular-nums text-slate-950">{getTokenCount(member)} Token</span>
+                      </>
+                    );
+
+                    if (profile) {
+                      return (
+                        <li key={member.id}>
+                          <button
+                            type="button"
+                            onClick={() => setCardMember(member)}
+                            aria-label={`查看${getMemberName(member)}的角色卡`}
+                            className="flex w-full items-center gap-3 rounded-[1.5rem] border border-slate-200 px-4 py-3 text-left transition hover:border-rose-300 hover:bg-rose-50/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
+                          >
+                            {rowContent}
+                          </button>
+                        </li>
+                      );
+                    }
+
+                    return (
+                      <li key={member.id} className="flex items-center gap-3 rounded-[1.5rem] border border-slate-200 px-4 py-3">
+                        {rowContent}
+                      </li>
+                    );
+                  })}
                 </ol>
               ) : (
                 <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-5 text-sm font-semibold text-slate-700">目前沒有進行中成員。</p>
@@ -155,6 +222,14 @@ export default function Settings() {
           </button>
         </section>
       </div>
+
+      {cardMember && cardMemberProfile ? (
+        <MemberCardModal
+          member={cardMember}
+          profile={cardMemberProfile}
+          onClose={() => setCardMember(null)}
+        />
+      ) : null}
     </section>
   );
 }
