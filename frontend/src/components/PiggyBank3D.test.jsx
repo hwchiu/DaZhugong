@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import PiggyBank3D, { samplePiggyTokens } from './PiggyBank3D.jsx';
+import PiggyBank3D, { getDailyBackgroundPhotoUrl, samplePiggyTokens } from './PiggyBank3D.jsx';
 
 afterEach(() => {
   cleanup();
@@ -46,6 +46,45 @@ describe('samplePiggyTokens', () => {
 
     const sample = samplePiggyTokens([{ id: 'member', color: 'not-a-color', totalTokens: 1 }], 80);
     expect(sample.tokens[0].color).toBe('#f472b6');
+  });
+});
+
+describe('getDailyBackgroundPhotoUrl', () => {
+  it("builds a Picsum seed URL from today's date so it stays stable within a day", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 8, 3, 15, 0));
+
+    const url = getDailyBackgroundPhotoUrl();
+
+    expect(url).toBe('https://picsum.photos/seed/2026-09-03/1000/700');
+
+    vi.setSystemTime(new Date(2026, 8, 3, 23, 59));
+    expect(getDailyBackgroundPhotoUrl()).toBe(url);
+
+    vi.useRealTimers();
+  });
+
+  it('changes to a new seed on the next calendar day', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 8, 3, 23, 59));
+    const day1 = getDailyBackgroundPhotoUrl();
+
+    vi.setSystemTime(new Date(2026, 8, 4, 0, 1));
+    const day2 = getDailyBackgroundPhotoUrl();
+
+    expect(day2).not.toBe(day1);
+    expect(day2).toBe('https://picsum.photos/seed/2026-09-04/1000/700');
+
+    vi.useRealTimers();
+  });
+
+  it('accepts a custom width and height', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 0, 5));
+
+    expect(getDailyBackgroundPhotoUrl(400, 300)).toBe('https://picsum.photos/seed/2026-01-05/400/300');
+
+    vi.useRealTimers();
   });
 });
 

@@ -4,6 +4,7 @@ import { useGroup } from '../hooks/useGroup.js';
 import { auth } from '../firebase.js';
 import { useAuthStore } from '../store/authStore.js';
 import { deriveFirebasePassword } from '../auth/credentials.js';
+import MemberAvatar from './MemberAvatar.jsx';
 
 const GROUP_ID = 'main';
 const MIN_ACCESS_CODE_LENGTH = 12;
@@ -11,17 +12,6 @@ const MAX_ACCESS_CODE_LENGTH = 64;
 const THROTTLED_ERROR_MESSAGE = '嘗試次數過多，請稍後再試。';
 const GENERIC_ERROR_MESSAGE = '登入失敗，請確認通行碼後再試，或稍後重試。';
 const MEMBERS_ERROR_MESSAGE = '成員資料暫時載入失敗，請重新整理頁面後再試。';
-const MEMBER_EMOJIS = {
-  pig: '🐷',
-  cat: '🐱',
-  frog: '🐸',
-  bear: '🐻',
-  dog: '🐶',
-};
-
-function getMemberEmoji(avatar) {
-  return MEMBER_EMOJIS[avatar] ?? '🐷';
-}
 
 function getTokenCountLabel(totalTokens) {
   return `${Number.isFinite(totalTokens) ? totalTokens : 0} 枚代幣`;
@@ -180,7 +170,7 @@ export default function Login() {
                     style={isSelected ? getSelectedCardStyle(member) : undefined}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <span className="text-3xl leading-none">{getMemberEmoji(member.avatar)}</span>
+                      <MemberAvatar member={member} size="md" />
                       <span
                         aria-hidden="true"
                         className="mt-1 inline-block h-3 w-3 rounded-full border border-white/70 shadow-sm"

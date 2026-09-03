@@ -10,6 +10,7 @@ const authState = vi.hoisted(() => ({
 
 const useGroupMock = vi.hoisted(() => vi.fn());
 const useTokensMock = vi.hoisted(() => vi.fn());
+const useWeatherMock = vi.hoisted(() => vi.fn());
 const piggyState = vi.hoisted(() => ({ shouldThrow: false }));
 
 vi.mock('../store/authStore.js', () => ({
@@ -24,6 +25,11 @@ vi.mock('../hooks/useGroup.js', () => ({
 vi.mock('../hooks/useTokens.js', () => ({
   useTokens: useTokensMock,
   default: useTokensMock,
+}));
+
+vi.mock('../hooks/useWeather.js', () => ({
+  useWeather: useWeatherMock,
+  default: useWeatherMock,
 }));
 
 vi.mock('../components/PendingBanner.jsx', () => ({
@@ -80,6 +86,7 @@ beforeEach(() => {
   piggyState.shouldThrow = false;
   useGroupMock.mockReset();
   useTokensMock.mockReset();
+  useWeatherMock.mockReset();
   useGroupMock.mockReturnValue({
     members: [
       { id: 'self', name: '自己', active: true, color: '#ec4899', totalTokens: 1 },
@@ -91,6 +98,10 @@ beforeEach(() => {
     tokens: [],
     loading: false,
     error: null,
+  });
+  useWeatherMock.mockReturnValue({
+    weather: null,
+    weatherFailed: false,
   });
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });

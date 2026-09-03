@@ -103,7 +103,7 @@ export default function Settings() {
     <section className="app-page bg-gradient-to-b from-rose-50 via-pink-50 to-orange-50 px-4 text-slate-900">
       <div className="mx-auto flex w-full max-w-md flex-col gap-4">
         <header className="rounded-[2rem] bg-white/95 p-6 shadow-lg shadow-rose-100">
-          <p className="text-sm font-semibold uppercase tracking-[0.3em] text-rose-700">DaZhugong</p>
+          <p className="text-brand text-sm font-semibold uppercase tracking-[0.3em]">DaZhugong</p>
           <h1 className="mt-3 text-2xl font-black text-slate-950">設定</h1>
           <p className="mt-2 text-sm leading-6 text-slate-700">檢視午餐群組狀態與目前登入身分。</p>
         </header>

@@ -94,6 +94,67 @@ function prefersReducedMotion() {
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
+// 每天固定一張、隔天自動換的背景照片：用Picsum Photos的seed功能，seed吃當天日期字串，
+// 同一天大家看到同一張、每天自動輪替下一張。Picsum不用API key、不用申請帳號，
+// 圖庫大約1000張真實攝影作品(來源是Unsplash攝影師)，唯一的取捨是主題不保證是風景，
+// 這是使用者已經確認接受的取捨(選過Picsum而不是需要API key的Unsplash)。
+export function getDailyBackgroundPhotoUrl(width = 1000, height = 700) {
+  const now = new Date();
+  const seed = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return `https://picsum.photos/seed/${seed}/${width}/${height}`;
+}
+
+// 非同步把當天的背景照片包成環境貼圖，取代掉初始的RoomEnvironment，讓玻璃反光
+// 映出照片的色調。這是漸進式升級：一開始先用RoomEnvironment(不用等網路)，
+// 照片load好了才換上去，不會卡住整個3D場景的初始渲染。任何一步失敗都只是
+// 靜靜保留原本的RoomEnvironment，不會讓整個豬公壞掉。
+function upgradeEnvironmentWithDailyPhoto({ THREE, renderer, scene, photoUrl, isDisposed, onSwapTexture }) {
+  try {
+    const loader = new THREE.TextureLoader();
+    loader.setCrossOrigin('anonymous');
+    loader.load(
+      photoUrl,
+      (texture) => {
+        if (isDisposed()) {
+          texture.dispose();
+          return;
+        }
+
+        try {
+          texture.colorSpace = THREE.SRGBColorSpace;
+          const envScene = new THREE.Scene();
+          const planeGeo = new THREE.PlaneGeometry(12, 12);
+          const planeMat = new THREE.MeshBasicMaterial({ map: texture });
+          const plane = new THREE.Mesh(planeGeo, planeMat);
+          plane.position.set(0, 0, -5);
+          envScene.add(plane);
+          envScene.add(new THREE.AmbientLight(0xffffff, 0.9));
+
+          const pmrem = new THREE.PMREMGenerator(renderer);
+          const renderTarget = pmrem.fromScene(envScene, 0.04);
+          pmrem.dispose();
+          planeGeo.dispose();
+          planeMat.dispose();
+          texture.dispose();
+
+          const oldEnv = scene.environment;
+          scene.environment = renderTarget.texture;
+          oldEnv?.dispose?.();
+          onSwapTexture?.(renderTarget.texture);
+        } catch (innerErr) {
+          console.error('用每日背景照片升級環境貼圖失敗，維持原本的RoomEnvironment：', innerErr);
+        }
+      },
+      undefined,
+      (loadErr) => {
+        console.error('每日背景照片載入失敗，維持原本的RoomEnvironment：', loadErr);
+      },
+    );
+  } catch (err) {
+    console.error('環境貼圖升級流程整體失敗，忽略：', err);
+  }
+}
+
 function StaticPig({ totalCount, renderedCount, reducedMotion }) {
   const label = `小豬撲滿，內含 ${totalCount} Token，畫面顯示 ${renderedCount} 個代表物件`;
 
@@ -147,6 +208,7 @@ export default function PiggyBank3D({ members = [] }) {
   const hostRef = useRef(null);
   const [reducedMotion, setReducedMotion] = useState(prefersReducedMotion);
   const [renderFailed, setRenderFailed] = useState(false);
+  const [backgroundPhotoUrl] = useState(() => getDailyBackgroundPhotoUrl());
   const sample = useMemo(() => samplePiggyTokens(members), [members]);
 
   useEffect(() => {
@@ -245,6 +307,16 @@ export default function PiggyBank3D({ members = [] }) {
         envTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
         pmrem.dispose();
         scene.environment = envTexture;
+        upgradeEnvironmentWithDailyPhoto({
+          THREE,
+          renderer,
+          scene,
+          photoUrl: backgroundPhotoUrl,
+          isDisposed: () => disposed,
+          onSwapTexture: (texture) => {
+            envTexture = texture;
+          },
+        });
 
         scene.add(new THREE.HemisphereLight(0xffffff, 0x7c2d12, 1.6));
         const keyLight = new THREE.DirectionalLight(0xffffff, 2.4);
@@ -537,12 +609,21 @@ export default function PiggyBank3D({ members = [] }) {
           reducedMotion={reducedMotion}
         />
       ) : (
-        <div
-          ref={hostRef}
-          className="h-72 w-full"
-          role="img"
-          aria-label={`可水平拖曳旋轉的小豬撲滿，內含 ${sample.totalCount} Token`}
-        />
+        <>
+          {/* eslint-disable-next-line jsx-a11y/alt-text */}
+          <img
+            src={backgroundPhotoUrl}
+            alt=""
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full object-cover blur-[2px] scale-105"
+          />
+          <div
+            ref={hostRef}
+            className="relative h-72 w-full"
+            role="img"
+            aria-label={`可水平拖曳旋轉的小豬撲滿，內含 ${sample.totalCount} Token`}
+          />
+        </>
       )}
       <figcaption className="sr-only">
         小豬內的彩色 Token 依成員累計數量取樣呈現，最多顯示 {MAX_RENDERED_TOKENS} 個物件。

@@ -103,6 +103,9 @@ export default function History() {
                       <span className="mx-2 text-slate-600">記給</span>
                       <MemberLabel member={target} />
                     </p>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                      原因：{typeof token.reason === 'string' && token.reason.trim() ? token.reason : '未填寫原因（舊版紀錄）'}
+                    </p>
                     <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
                       <time className="text-sm font-medium text-slate-700" dateTime={new Date(toMillis(token.timestamp)).toISOString()}>
                         {formatTimestamp(token.timestamp)}

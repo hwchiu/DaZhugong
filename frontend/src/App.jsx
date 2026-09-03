@@ -9,6 +9,7 @@ import History from './pages/History.jsx';
 import Stats from './pages/Stats.jsx';
 import Settings from './pages/Settings.jsx';
 import { useAuthStore } from './store/authStore.js';
+import { useDailyTheme } from './hooks/useDailyTheme.js';
 
 const AUTHENTICATED_ROUTE_LABELS = {
   '/': '首頁',
@@ -26,6 +27,7 @@ function AppContent() {
   const mainContentRef = useRef(null);
   const previousPathRef = useRef(null);
   const [routeAnnouncement, setRouteAnnouncement] = useState('');
+  useDailyTheme();
 
   useEffect(() => {
     if (!currentMember) {

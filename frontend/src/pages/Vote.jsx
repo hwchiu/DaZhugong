@@ -10,6 +10,14 @@ const SAFE_LOAD_ERROR_MESSAGE = '目前無法載入投票資料，請稍後再�
 const SAFE_SUBMIT_ERROR_MESSAGE = '目前無法儲存這筆紀錄，請稍後再試。';
 const REASON_MAX_LENGTH = 200;
 
+// 快速選取的常用原因；「其他」永遠加在最後，代表使用者要自己打字，不在這個清單裡。
+const REASON_PRESETS = [
+  { id: 'teams', label: '偷看teams', value: '偷看teams' },
+  { id: 'meeting', label: '討論會議', value: '討論會議' },
+  { id: 'assign', label: '分派任務', value: '分派任務' },
+  { id: 'progress', label: '詢問進度', value: '詢問進度' },
+];
+
 function getMemberName(member) {
   return member?.name ?? member?.displayName ?? '未命名成員';
 }
@@ -158,7 +166,7 @@ export default function Vote() {
     <section className="app-page bg-gradient-to-b from-rose-50 via-pink-50 to-orange-50 px-4 text-slate-900">
       <div className="mx-auto flex w-full max-w-md flex-col gap-4">
         <section className="rounded-[2rem] bg-white/95 p-6 shadow-lg shadow-rose-100">
-          <p className="text-sm font-medium uppercase tracking-[0.3em] text-rose-400">DaZhugong</p>
+          <p className="text-brand text-sm font-medium uppercase tracking-[0.3em]">DaZhugong</p>
           <div className="mt-4 flex items-center gap-3">
             <span aria-hidden="true" className="text-3xl leading-none">
               🗳️
@@ -221,7 +229,7 @@ export default function Vote() {
                       >
                         <MemberAvatar member={member} size="md" />
                         <span className="mt-3 text-base font-semibold text-slate-900">{memberName}</span>
-                        <span className="mt-2 rounded-full bg-rose-50 px-3 py-1 text-sm font-medium text-rose-700">
+                        <span className="bg-brand-soft text-brand mt-2 rounded-full px-3 py-1 text-sm font-medium">
                           已確認 {member.confirmedCount} 票
                         </span>
                         <span className="mt-3 text-sm leading-6 text-slate-600">
@@ -268,7 +276,9 @@ export default function Vote() {
                 type="button"
                 disabled={!selectedMember || pending}
                 onClick={handleOpenReasonModal}
-                className="mt-4 inline-flex min-h-12 w-full items-center justify-center rounded-2xl bg-slate-950 px-4 py-3 text-base font-semibold text-white shadow-lg shadow-slate-300 transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-slate-300 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 disabled:shadow-none"
+                className={`mt-4 inline-flex min-h-12 w-full items-center justify-center rounded-2xl px-4 py-3 text-base font-semibold text-white transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--brand-500)] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 disabled:shadow-none ${
+                  !selectedMember || pending ? '' : 'bg-brand-gradient shadow-lg'
+                }`}
               >
                 {selectedMember ? `確認：${getMemberName(selectedMember)}` : '請先選擇成員'}
               </button>
@@ -297,31 +307,17 @@ export default function Vote() {
                 原因說明
               </label>
 
-              <div className="mt-2 mb-3 flex gap-2">
-                {[
-                  { id: 'teams', label: '偷看teams', value: '偷看teams' },
-                  { id: 'progress', label: '詢問進度', value: '詢問進度' },
-                  { id: 'other', label: '其他', value: '' },
-                ].map((opt) => {
-                  const active =
-                    (opt.id === 'teams' && reason === '偷看teams') ||
-                    (opt.id === 'progress' && reason === '詢問進度') ||
-                    (opt.id === 'other' && reason !== '偷看teams' && reason !== '詢問進度');
+              <div className="mt-2 mb-3 flex flex-wrap gap-2">
+                {REASON_PRESETS.map((opt) => {
+                  const active = reason === opt.value;
 
                   return (
                     <button
                       key={opt.id}
                       type="button"
                       disabled={pending}
-                      onClick={() => {
-                        if (opt.id !== 'other') {
-                          setReason(opt.value);
-                        } else {
-                          setReason('');
-                          reasonInputRef.current?.focus();
-                        }
-                      }}
-                      className={`flex-1 rounded-full py-2 text-xs font-semibold border transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                      onClick={() => setReason(opt.value)}
+                      className={`rounded-full px-3.5 py-2 text-xs font-semibold border transition disabled:cursor-not-allowed disabled:opacity-60 ${
                         active
                           ? 'bg-slate-950 text-white border-slate-950'
                           : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
@@ -331,6 +327,21 @@ export default function Vote() {
                     </button>
                   );
                 })}
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => {
+                    setReason('');
+                    reasonInputRef.current?.focus();
+                  }}
+                  className={`rounded-full px-3.5 py-2 text-xs font-semibold border transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                    !REASON_PRESETS.some((opt) => opt.value === reason)
+                      ? 'bg-slate-950 text-white border-slate-950'
+                      : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  其他
+                </button>
               </div>
 
               <textarea
@@ -366,7 +377,9 @@ export default function Vote() {
                 <button
                   type="submit"
                   disabled={pending || !trimmedReason}
-                  className="flex-1 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-slate-300 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 disabled:shadow-none"
+                  className={`flex-1 rounded-2xl px-4 py-3 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-600 disabled:shadow-none ${
+                    pending || !trimmedReason ? '' : 'bg-brand-gradient shadow-lg'
+                  }`}
                 >
                   {pending ? '儲存中…' : '儲存'}
                 </button>

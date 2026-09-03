@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom';
+import { HistoryIcon, HomeIcon, SettingsIcon, StatsIcon, VoteIcon } from './NavIcons.jsx';
 
 const TABS = [
-  { to: '/', icon: '🐷', label: '首頁' },
-  { to: '/vote', icon: '🗳️', label: '投票' },
-  { to: '/history', icon: '📋', label: '歷史紀錄' },
-  { to: '/stats', icon: '📊', label: '統計' },
-  { to: '/settings', icon: '⚙️', label: '設定' },
+  { to: '/', Icon: HomeIcon, label: '首頁' },
+  { to: '/vote', Icon: VoteIcon, label: '投票' },
+  { to: '/history', Icon: HistoryIcon, label: '歷史紀錄' },
+  { to: '/stats', Icon: StatsIcon, label: '統計' },
+  { to: '/settings', Icon: SettingsIcon, label: '設定' },
 ];
 
 export default function BottomNav() {
@@ -16,21 +17,19 @@ export default function BottomNav() {
           className="grid grid-cols-5 gap-1 px-2 pt-2"
           style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)' }}
         >
-          {TABS.map((tab) => (
+          {TABS.map(({ to, Icon, label }) => (
             <NavLink
-              key={tab.to}
-              to={tab.to}
+              key={to}
+              to={to}
               end
               className={({ isActive }) =>
                 `flex min-h-14 flex-col items-center justify-center rounded-2xl px-2 py-1 text-xs font-medium transition ${
-                  isActive ? 'bg-rose-50 text-pink-700' : 'text-slate-600'
+                  isActive ? 'bg-brand-soft text-brand' : 'text-slate-600'
                 }`
               }
             >
-              <span aria-hidden="true" className="text-lg leading-none">
-                {tab.icon}
-              </span>
-              <span className="mt-1">{tab.label}</span>
+              <Icon className="h-6 w-6" />
+              <span className="mt-1">{label}</span>
             </NavLink>
           ))}
         </div>

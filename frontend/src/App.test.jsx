@@ -73,7 +73,7 @@ describe('App', () => {
     const homeLink = screen.getByRole('link', { name: '首頁' });
 
     expect(historyLink.getAttribute('aria-current')).toBe('page');
-    expect(historyLink.className).toContain('text-pink-700');
+    expect(historyLink.className).toContain('text-brand');
     expect(homeLink.getAttribute('aria-current')).toBe(null);
     expect(homeLink.className).toContain('text-slate-600');
   });

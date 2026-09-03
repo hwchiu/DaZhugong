@@ -301,6 +301,16 @@ describe('Vote page', () => {
     await user.click(teamsBtn);
     expect(textarea.value).toBe('偷看teams');
 
+    const meetingBtn = screen.getByRole('button', { name: '討論會議' });
+    await user.click(meetingBtn);
+    expect(textarea.value).toBe('討論會議');
+    expect(meetingBtn.className).toContain('bg-slate-950');
+    expect(teamsBtn.className).not.toContain('bg-slate-950');
+
+    const assignBtn = screen.getByRole('button', { name: '分派任務' });
+    await user.click(assignBtn);
+    expect(textarea.value).toBe('分派任務');
+
     const progressBtn = screen.getByRole('button', { name: '詢問進度' });
     await user.click(progressBtn);
     expect(textarea.value).toBe('詢問進度');
@@ -308,6 +318,7 @@ describe('Vote page', () => {
     const otherBtn = screen.getByRole('button', { name: '其他' });
     await user.click(otherBtn);
     expect(textarea.value).toBe('');
+    expect(otherBtn.className).toContain('bg-slate-950');
   });
 
   it('shows safe load and save errors without exposing raw failures', async () => {

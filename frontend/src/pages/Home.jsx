@@ -4,28 +4,33 @@ import DateWeatherBar from '../components/DateWeatherBar.jsx';
 import LazyBoundary from '../components/LazyBoundary.jsx';
 import LiveClock from '../components/LiveClock.jsx';
 import MemberAvatar from '../components/MemberAvatar.jsx';
+import { HistoryIcon, HomeIcon, SettingsIcon, StatsIcon, TokenIcon, VoteIcon } from '../components/NavIcons.jsx';
 import PendingBanner from '../components/PendingBanner.jsx';
+import WeatherBackground from '../components/WeatherBackground.jsx';
 import { pickRandomGreeting } from '../data/greetings.js';
 import { useGroup } from '../hooks/useGroup.js';
 import { useTokens } from '../hooks/useTokens.js';
+import { useWeather } from '../hooks/useWeather.js';
 import { useAuthStore } from '../store/authStore.js';
 
 const SAFE_LOAD_ERROR_MESSAGE = '目前無法同步首頁資料，請稍後再試。';
 const loadPiggyBank3D = () => import('../components/PiggyBank3D.jsx');
 
 const NAV_LINKS = [
-  { to: '/', icon: '🐷', label: '首頁' },
-  { to: '/vote', icon: '🗳️', label: '投票' },
-  { to: '/history', icon: '📋', label: '歷史紀錄' },
-  { to: '/stats', icon: '📊', label: '統計' },
-  { to: '/settings', icon: '⚙️', label: '設定' },
+  { to: '/', Icon: HomeIcon, label: '首頁' },
+  { to: '/vote', Icon: VoteIcon, label: '投票' },
+  { to: '/history', Icon: HistoryIcon, label: '歷史紀錄' },
+  { to: '/stats', Icon: StatsIcon, label: '統計' },
+  { to: '/settings', Icon: SettingsIcon, label: '設定' },
 ];
 
 const RULES = [
   '午餐時間（12:00–13:00）禁止討論與工作相關的事情。',
-  '違規者需投入一枚屬於自己顏色的 Token 到罰金箱。',
+  '從在F12P7 8樓相見之後就開始進行管制，直至結束用餐走進電梯中。電梯中屬於公海，非管制範圍。',
+  '違規者須由其他成員投入一枚屬於自己顏色的 Token 到罰金箱中，off-line 由違規者認罪。',
   'Token 會記錄每個人違規次數，統計會即時更新。',
-  '罰金用途：聚餐、下午茶，或團隊活動基金！',
+  '違規情節重大者，視當下 SHERRY 之懲處規則進行懲罰。',
+  '罰金用途：聚餐、下午茶，或出遊基金！',
 ];
 
 function getMemberName(member) {
@@ -110,7 +115,7 @@ function RulesModal({ onClose }) {
         <ol className="mt-4 flex flex-col gap-3">
           {RULES.map((rule, index) => (
             <li key={rule} className="flex gap-3 text-sm leading-6 text-stone-700">
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-rose-100 text-xs font-bold text-rose-700">
+              <span className="bg-brand-soft text-brand flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold">
                 {index + 1}
               </span>
               <span>{rule}</span>
@@ -150,17 +155,15 @@ function NavDrawer({ onClose }) {
             ✕
           </button>
         </div>
-        {NAV_LINKS.map((item) => (
+        {NAV_LINKS.map(({ to, Icon, label }) => (
           <Link
-            key={item.to}
-            to={item.to}
+            key={to}
+            to={to}
             onClick={onClose}
             className="flex items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold text-stone-700 transition hover:bg-rose-50"
           >
-            <span aria-hidden="true" className="text-lg">
-              {item.icon}
-            </span>
-            {item.label}
+            <Icon className="h-5 w-5" />
+            {label}
           </Link>
         ))}
       </nav>
@@ -174,6 +177,7 @@ export default function Home() {
   const { members, loading: groupLoading, error: groupError } = useGroup(groupId);
   const { tokens: reports, loading: reportsLoading, error: reportsError } = useTokens(groupId, null);
   const [greeting] = useState(() => pickRandomGreeting());
+  const { weather, weatherFailed } = useWeather();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
 
@@ -250,7 +254,7 @@ export default function Home() {
         <PendingBanner />
 
         <div className="flex flex-wrap items-center gap-2">
-          <DateWeatherBar />
+          <DateWeatherBar weather={weather} weatherFailed={weatherFailed} />
           <LiveClock />
         </div>
 
@@ -258,7 +262,8 @@ export default function Home() {
           {greeting}
         </div>
 
-        <div className="flex flex-1 flex-col items-center justify-center">
+        <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden rounded-[1.75rem]">
+          <WeatherBackground weatherCode={weather?.weatherCode} />
           {loading || loadError ? (
             <div
               aria-hidden="true"
@@ -324,9 +329,9 @@ export default function Home() {
 
         <Link
           to="/vote"
-          className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-500 text-base font-bold text-white shadow-lg shadow-rose-200 transition hover:from-rose-400 hover:to-pink-400 focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-rose-300"
+          className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-brand-gradient text-base font-bold text-white transition focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-[var(--brand-500)]"
         >
-          <span aria-hidden="true">➕</span> 投入一枚 Token
+          <TokenIcon className="h-5 w-5" /> 投入一枚 Token
         </Link>
 
         {!loading && !loadError && activeMembersForStats.length ? (
@@ -339,7 +344,7 @@ export default function Home() {
                   <span className="text-xs font-semibold text-stone-700">
                     {member.id === currentMember?.id ? '你' : getMemberName(member)}
                   </span>
-                  <span className="text-xs font-bold text-rose-600">
+                  <span className="text-brand text-xs font-bold">
                     {todayCountsByMember.get(member.id) ?? 0} 枚
                   </span>
                 </div>

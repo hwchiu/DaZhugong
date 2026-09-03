@@ -60,6 +60,42 @@ describe('History page', () => {
     expect(rows[0].textContent).toMatch(/2026.*8.*23/);
   });
 
+  it("shows each entry's reason, falling back to a legacy-record note when reason is missing", () => {
+    useGroupMock.mockReturnValue({
+      members: [
+        { id: 'reporter', name: '阿明', active: true },
+        { id: 'target', name: '小美', active: true },
+      ],
+      loading: false,
+      error: null,
+    });
+    useTokensMock.mockReturnValue({
+      tokens: [
+        {
+          id: 'with-reason',
+          reporterId: 'reporter',
+          targetId: 'target',
+          timestamp: Date.UTC(2026, 7, 23, 4, 30),
+          reason: '討論會議',
+        },
+        {
+          id: 'legacy-no-reason',
+          reporterId: 'target',
+          targetId: 'reporter',
+          timestamp: Date.UTC(2026, 7, 22, 4, 0),
+        },
+      ],
+      loading: false,
+      error: null,
+    });
+
+    render(<History />);
+
+    const rows = within(screen.getByRole('list', { name: '已確認 Token 歷史紀錄' })).getAllByRole('listitem');
+    expect(rows[0].textContent).toContain('原因：討論會議');
+    expect(rows[1].textContent).toContain('原因：未填寫原因（舊版紀錄）');
+  });
+
   it('shows accessible loading and safe error feedback', () => {
     useTokensMock.mockReturnValue({ tokens: [], loading: true, error: null });
     const { rerender } = render(<History />);
