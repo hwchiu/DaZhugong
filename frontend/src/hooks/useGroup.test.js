@@ -102,6 +102,31 @@ describe('useGroup', () => {
     expect(firestoreMock.collection).toHaveBeenCalledWith(firestoreMock.db, 'groups', 'group-1', 'reports');
   });
 
+  it('overrides the color of members with a fixed brand color, leaving others untouched', async () => {
+    const { useGroup } = await loadHook();
+
+    const { result } = renderHook(() => useGroup('group-1'));
+
+    const [groupListener, membersListener, reportsListener] = firestoreMock.state.subscriptions;
+    await act(async () => {
+      groupListener.next(makeSnapshot({ id: 'group-1', data: { name: 'Lunch Crew' } }));
+      membersListener.next(makeSnapshot({
+        docs: [
+          makeDoc('along', { name: '阿龍', color: '#111111', active: true }),
+          makeDoc('friend', { name: '阿明', color: '#222222', active: true }),
+        ],
+      }));
+      reportsListener.next(makeSnapshot({ docs: [] }));
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    const along = result.current.members.find((member) => member.id === 'along');
+    const friend = result.current.members.find((member) => member.id === 'friend');
+    expect(along.color).toBe('#eab308');
+    expect(friend.color).toBe('#222222');
+  });
+
   it('ignores legacy inactive member totals and derives totals from reports only', async () => {
     const { useGroup } = await loadHook();
     const { result } = renderHook(() => useGroup('group-1'));

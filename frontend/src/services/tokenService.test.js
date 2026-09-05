@@ -21,12 +21,21 @@ const firestoreMock = vi.hoisted(() => ({
   serverTimestamp: vi.fn(() => ({ kind: 'server-timestamp' })),
   updateDoc: vi.fn(),
   writeBatch: vi.fn(),
+  // runTransaction的mock：實際呼叫傳進來的updateFunction，並把下面這個共用的
+  // mockTransaction物件(get/update/delete都是vi.fn())傳給它，讓每個測試可以自己
+  // 設定transaction.get()要回傳什麼、再檢查transaction.update()/delete()有沒有被正確呼叫。
+  runTransaction: vi.fn((db, updateFunction) => updateFunction(firestoreMock.mockTransaction)),
+  mockTransaction: {
+    get: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn(),
+  },
 }));
 
 vi.mock('../firebase.js', () => firebaseState);
 vi.mock('firebase/firestore', () => firestoreMock);
 
-import { reportAndConfirmToken, reportToken, resolveToken } from './tokenService.js';
+import { confirmAppeal, fileAppeal, reportAndConfirmToken, reportToken, resolveToken } from './tokenService.js';
 
 const currentMember = {
   id: 'member-1',
@@ -37,7 +46,14 @@ const currentMember = {
 
 beforeEach(() => {
   firebaseState.auth.currentUser = { uid: 'uid-1' };
-  Object.values(firestoreMock).forEach((mock) => mock.mockClear());
+  Object.values(firestoreMock).forEach((mock) => {
+    if (typeof mock?.mockClear === 'function') {
+      mock.mockClear();
+    }
+  });
+  firestoreMock.mockTransaction.get.mockReset();
+  firestoreMock.mockTransaction.update.mockReset();
+  firestoreMock.mockTransaction.delete.mockReset();
 });
 
 describe('reportToken', () => {
@@ -277,5 +293,184 @@ describe('resolveToken', () => {
       },
     );
     expect(firestoreMock.writeBatch).not.toHaveBeenCalled();
+  });
+});
+
+describe('fileAppeal', () => {
+  const existingReport = {
+    targetId: 'member-1',
+    reporterId: 'member-2',
+    reason: '討論會議',
+    timestamp: { kind: 'server-timestamp' },
+  };
+
+  it('rejects when the record does not exist', async () => {
+    firestoreMock.getDoc.mockResolvedValue({ exists: () => false });
+
+    await expect(fileAppeal({
+      groupId: 'main',
+      reportId: 'report-1',
+      currentMember,
+    })).rejects.toThrow(/no longer exists/i);
+
+    expect(firestoreMock.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the current member is not the owner of the record', async () => {
+    firestoreMock.getDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ ...existingReport, targetId: 'someone-else' }),
+    });
+
+    await expect(fileAppeal({
+      groupId: 'main',
+      reportId: 'report-1',
+      currentMember,
+    })).rejects.toThrow(/only the record owner/i);
+
+    expect(firestoreMock.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the record already has an active appeal', async () => {
+    firestoreMock.getDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ ...existingReport, appealedAt: { kind: 'server-timestamp' } }),
+    });
+
+    await expect(fileAppeal({
+      groupId: 'main',
+      reportId: 'report-1',
+      currentMember,
+    })).rejects.toThrow(/already has an active appeal/i);
+
+    expect(firestoreMock.updateDoc).not.toHaveBeenCalled();
+  });
+
+  it('sets appealedAt and an empty confirmation list when the owner files a valid appeal', async () => {
+    firestoreMock.getDoc.mockResolvedValue({
+      exists: () => true,
+      data: () => existingReport,
+    });
+
+    await fileAppeal({ groupId: 'main', reportId: 'report-1', currentMember });
+
+    expect(firestoreMock.updateDoc).toHaveBeenCalledWith(
+      expect.objectContaining({ path: ['groups', 'main', 'reports', 'report-1'] }),
+      { appealedAt: { kind: 'server-timestamp' }, appealConfirmedBy: [] },
+    );
+  });
+
+  it('rejects an inactive current member before touching Firestore', async () => {
+    await expect(fileAppeal({
+      groupId: 'main',
+      reportId: 'report-1',
+      currentMember: { ...currentMember, active: false },
+    })).rejects.toThrow(/inactive/i);
+
+    expect(firestoreMock.getDoc).not.toHaveBeenCalled();
+  });
+});
+
+describe('confirmAppeal', () => {
+  const appealedReport = {
+    targetId: 'member-2',
+    reporterId: 'member-3',
+    reason: '討論會議',
+    timestamp: { kind: 'server-timestamp' },
+    appealedAt: { kind: 'server-timestamp' },
+    appealConfirmedBy: [],
+  };
+
+  it('rejects when there is no active appeal on the record', async () => {
+    firestoreMock.mockTransaction.get.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ ...appealedReport, appealedAt: null }),
+    });
+
+    await expect(confirmAppeal({
+      groupId: 'main',
+      reportId: 'report-1',
+      currentMember,
+    })).rejects.toThrow(/does not have an active appeal/i);
+
+    expect(firestoreMock.mockTransaction.update).not.toHaveBeenCalled();
+    expect(firestoreMock.mockTransaction.delete).not.toHaveBeenCalled();
+  });
+
+  it('rejects the record owner trying to confirm their own appeal', async () => {
+    firestoreMock.mockTransaction.get.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ ...appealedReport, targetId: currentMember.id }),
+    });
+
+    await expect(confirmAppeal({
+      groupId: 'main',
+      reportId: 'report-1',
+      currentMember,
+    })).rejects.toThrow(/cannot confirm their own appeal/i);
+  });
+
+  it('rejects a member who already confirmed this appeal', async () => {
+    firestoreMock.mockTransaction.get.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ ...appealedReport, appealConfirmedBy: [currentMember.id] }),
+    });
+
+    await expect(confirmAppeal({
+      groupId: 'main',
+      reportId: 'report-1',
+      currentMember,
+    })).rejects.toThrow(/already confirmed/i);
+  });
+
+  it('appends the confirming member without deleting when under the required threshold', async () => {
+    firestoreMock.mockTransaction.get.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ ...appealedReport, appealConfirmedBy: ['member-a'] }),
+    });
+
+    const result = await confirmAppeal({ groupId: 'main', reportId: 'report-1', currentMember });
+
+    expect(firestoreMock.mockTransaction.update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: ['groups', 'main', 'reports', 'report-1'] }),
+      { appealConfirmedBy: ['member-a', currentMember.id] },
+    );
+    expect(firestoreMock.mockTransaction.delete).not.toHaveBeenCalled();
+    expect(result).toEqual({ deleted: false, confirmedBy: ['member-a', currentMember.id] });
+  });
+
+  it('deletes the record once the 3rd confirmation is reached (AC: 3+ confirmations removes the record)', async () => {
+    firestoreMock.mockTransaction.get.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ ...appealedReport, appealConfirmedBy: ['member-a', 'member-b'] }),
+    });
+
+    const result = await confirmAppeal({ groupId: 'main', reportId: 'report-1', currentMember });
+
+    expect(firestoreMock.mockTransaction.delete).toHaveBeenCalledWith(
+      expect.objectContaining({ path: ['groups', 'main', 'reports', 'report-1'] }),
+    );
+    expect(firestoreMock.mockTransaction.update).not.toHaveBeenCalled();
+    expect(result.deleted).toBe(true);
+  });
+
+  it('rejects when the record no longer exists', async () => {
+    firestoreMock.mockTransaction.get.mockResolvedValue({ exists: () => false });
+
+    await expect(confirmAppeal({
+      groupId: 'main',
+      reportId: 'report-1',
+      currentMember,
+    })).rejects.toThrow(/no longer exists/i);
+  });
+
+  it('rejects an inactive current member before starting a transaction', async () => {
+    await expect(confirmAppeal({
+      groupId: 'main',
+      reportId: 'report-1',
+      currentMember: { ...currentMember, active: false },
+    })).rejects.toThrow(/inactive/i);
+
+    expect(firestoreMock.runTransaction).not.toHaveBeenCalled();
   });
 });

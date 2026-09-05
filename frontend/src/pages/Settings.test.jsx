@@ -8,6 +8,7 @@ const authState = vi.hoisted(() => ({
   logout: vi.fn(),
 }));
 const useGroupMock = vi.hoisted(() => vi.fn());
+const useTokensMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../store/authStore.js', () => ({
   useAuthStore: (selector) => selector(authState),
@@ -16,6 +17,11 @@ vi.mock('../store/authStore.js', () => ({
 vi.mock('../hooks/useGroup.js', () => ({
   useGroup: useGroupMock,
   default: useGroupMock,
+}));
+
+vi.mock('../hooks/useTokens.js', () => ({
+  useTokens: useTokensMock,
+  default: useTokensMock,
 }));
 
 import Settings from './Settings.jsx';
@@ -36,6 +42,8 @@ beforeEach(() => {
     loading: false,
     error: null,
   });
+  useTokensMock.mockReset();
+  useTokensMock.mockReturnValue({ tokens: [], loading: false, error: null });
 });
 
 describe('Settings page', () => {
@@ -143,5 +151,77 @@ describe('Settings page', () => {
 
     const accountSection = screen.getByText('目前登入：房產大亨').closest('section');
     expect(within(accountSection).getByRole('img', { name: '房產大亨' })).toBeTruthy();
+  });
+
+  it('always shows the exempt members section (豁免成員), independent of Firestore members, with a clickable character card', async () => {
+    const user = userEvent.setup();
+    render(<Settings />);
+
+    const exemptSection = screen.getByRole('heading', { name: '豁免成員' }).closest('section');
+    const list = within(exemptSection).getByRole('list', { name: '豁免成員' });
+    const items = within(list).getAllByRole('listitem');
+
+    expect(items).toHaveLength(1);
+    expect(items[0].textContent).toContain('Emily');
+    expect(within(exemptSection).getByText('1 人')).toBeTruthy();
+
+    // Emily已經有角色卡照片，點她的列一樣要能看到完整角色卡(跟其他成員一致)。
+    const emilyButton = within(exemptSection).getByRole('button', { name: '查看Emily的角色卡' });
+    await user.click(emilyButton);
+
+    const dialog = screen.getByRole('dialog', { name: 'Emily 角色卡' });
+    expect(dialog.textContent).toContain('Emily・Emily');
+    expect(dialog.querySelector('img')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: '關閉' }));
+    expect(screen.queryByRole('dialog')).toBe(null);
+  });
+
+  describe('member cooldown badge', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.setSystemTime(new Date(2024, 4, 22, 12, 30, 0));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('shows a cooldown badge next to a member reported less than 5 minutes ago', () => {
+      useTokensMock.mockReturnValue({
+        tokens: [{ id: 't1', targetId: 'friend', timestamp: new Date(2024, 4, 22, 12, 27, 0) }],
+        loading: false,
+        error: null,
+      });
+
+      render(<Settings />);
+
+      const row = screen.getByText('阿明').closest('li');
+      expect(within(row).getByText('冷卻中 2:00')).toBeTruthy();
+    });
+
+    it('does not show a cooldown badge for a member with no recent report', () => {
+      useTokensMock.mockReturnValue({ tokens: [], loading: false, error: null });
+
+      render(<Settings />);
+
+      const row = screen.getByText('阿明').closest('li');
+      expect(within(row).queryByRole('timer')).toBe(null);
+    });
+
+    it("cooldown badges are independent per member", () => {
+      useTokensMock.mockReturnValue({
+        tokens: [{ id: 't1', targetId: 'friend', timestamp: new Date(2024, 4, 22, 12, 29, 0) }],
+        loading: false,
+        error: null,
+      });
+
+      render(<Settings />);
+
+      const friendRow = screen.getByText('阿明').closest('li');
+      const selfRow = screen.getByText('自己').closest('li');
+      expect(within(friendRow).getByRole('timer')).toBeTruthy();
+      expect(within(selfRow).queryByRole('timer')).toBe(null);
+    });
   });
 });

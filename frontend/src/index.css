@@ -5,6 +5,7 @@
 :root {
   /* 每日主題色的CSS變數，這裡的值是還沒套用JS計算前的預設(等同目前的玫瑰粉主題)，
      避免變數還沒被useDailyTheme() 設定前，畫面出現無色/黑白的閃爍。 */
+  --brand-bg: #fff7f8;
   --brand-50: #fff1f2;
   --brand-500: #f43f5e;
   --brand-600: #e11d48;

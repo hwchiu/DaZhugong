@@ -67,10 +67,12 @@ function clamp01(value) {
 }
 
 // 給定基準色，算出淺(用來當chip/badge底色)、基準、深(用來當hover/漸層終點)、
-// 更深(用來當純文字色，確保跟白底有足夠對比)四個版本。
+// 更深(用來當純文字色，確保跟白底有足夠對比)、以及bg(比50還要再淺好幾階，
+// 專門給整頁背景漸層用，同一個色相家族但幾乎接近白色，不會蓋過內容的可讀性)。
 export function deriveColorShades(hex) {
   const { h, s } = hexToHsl(hex);
   return {
+    bg: hslToHex(h, clamp01(s * 0.4), 0.97),
     50: hslToHex(h, clamp01(s * 0.55), 0.95),
     500: hex,
     600: hslToHex(h, clamp01(s * 1.05), 0.36),

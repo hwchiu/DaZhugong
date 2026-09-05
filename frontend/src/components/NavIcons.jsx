@@ -92,6 +92,15 @@ export function TokenIcon({ className }) {
   );
 }
 
+export function PlusIcon({ className }) {
+  return (
+    <svg {...BASE_PROPS} strokeWidth={2.2} className={className}>
+      {/* 底部導覽列中間投票FAB用的+號，跟其他線條圖示同一套筆畫粗細/圓角端點 */}
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
 export const NAV_ICON_BY_KEY = {
   home: HomeIcon,
   vote: VoteIcon,

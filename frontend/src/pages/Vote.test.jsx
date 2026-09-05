@@ -1,5 +1,6 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const authState = vi.hoisted(() => ({
@@ -389,5 +390,136 @@ describe('Vote page', () => {
     expect(huaButton.className).toContain('focus-visible:outline-[#9f1239]');
     expect(huaButton.className).toContain('focus-visible:outline-offset-2');
     expect(huaButton.className).not.toContain('focus-visible:outline-none');
+  });
+
+  describe('per-member cooldown after being voted on', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.setSystemTime(new Date(2024, 4, 22, 12, 30, 0));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('disables a member who was reported less than 5 minutes ago, with a countdown label', () => {
+      useGroupMock.mockReturnValue({
+        members: [
+          { id: 'self', name: '自己', active: true },
+          { id: 'niuge', name: '牛哥', active: true },
+        ],
+        loading: false,
+        error: null,
+      });
+      useTokensMock.mockReturnValue({
+        tokens: [{ id: 't1', targetId: 'niuge', timestamp: new Date(2024, 4, 22, 12, 29, 0) }],
+        loading: false,
+        error: null,
+      });
+
+      renderVote();
+
+      const niugeButton = screen.getByRole('button', { name: /牛哥.*冷卻中還剩 4:00/ });
+      expect(niugeButton.disabled).toBe(true);
+      expect(screen.getByText('冷卻中 4:00')).toBeTruthy();
+    });
+
+    it('does not disable a member whose cooldown has already expired', () => {
+      useGroupMock.mockReturnValue({
+        members: [
+          { id: 'self', name: '自己', active: true },
+          { id: 'niuge', name: '牛哥', active: true },
+        ],
+        loading: false,
+        error: null,
+      });
+      useTokensMock.mockReturnValue({
+        tokens: [{ id: 't1', targetId: 'niuge', timestamp: new Date(2024, 4, 22, 12, 20, 0) }], // 10分鐘前
+        loading: false,
+        error: null,
+      });
+
+      renderVote();
+
+      const niugeButton = screen.getByRole('button', { name: /牛哥/ });
+      expect(niugeButton.disabled).toBe(false);
+      expect(screen.getByText('已確認 1 票')).toBeTruthy();
+    });
+
+    it("cooldown is per-member: one member's cooldown does not affect another's button", () => {
+      useGroupMock.mockReturnValue({
+        members: [
+          { id: 'self', name: '自己', active: true },
+          { id: 'niuge', name: '牛哥', active: true },
+          { id: 'along', name: '阿龍', active: true },
+        ],
+        loading: false,
+        error: null,
+      });
+      useTokensMock.mockReturnValue({
+        tokens: [{ id: 't1', targetId: 'niuge', timestamp: new Date(2024, 4, 22, 12, 29, 0) }],
+        loading: false,
+        error: null,
+      });
+
+      renderVote();
+
+      expect(screen.getByRole('button', { name: /牛哥/ }).disabled).toBe(true);
+      expect(screen.getByRole('button', { name: /阿龍/ }).disabled).toBe(false);
+    });
+
+    it('the countdown ticks down live and the button re-enables once the cooldown expires', async () => {
+      useGroupMock.mockReturnValue({
+        members: [
+          { id: 'self', name: '自己', active: true },
+          { id: 'niuge', name: '牛哥', active: true },
+        ],
+        loading: false,
+        error: null,
+      });
+      useTokensMock.mockReturnValue({
+        tokens: [{ id: 't1', targetId: 'niuge', timestamp: new Date(2024, 4, 22, 12, 29, 0) }],
+        loading: false,
+        error: null,
+      });
+
+      renderVote();
+      expect(screen.getByText('冷卻中 4:00')).toBeTruthy();
+
+      await act(async () => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(screen.getByText('冷卻中 3:00')).toBeTruthy();
+
+      await act(async () => {
+        vi.advanceTimersByTime(3 * 60_000 + 1000);
+      });
+      const niugeButton = screen.getByRole('button', { name: /牛哥/ });
+      expect(niugeButton.disabled).toBe(false);
+      expect(screen.getByText('已確認 1 票')).toBeTruthy();
+    });
+
+    it('clicking a member in cooldown does not select them (defensive, even if disabled were bypassed)', async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      useGroupMock.mockReturnValue({
+        members: [
+          { id: 'self', name: '自己', active: true },
+          { id: 'niuge', name: '牛哥', active: true },
+        ],
+        loading: false,
+        error: null,
+      });
+      useTokensMock.mockReturnValue({
+        tokens: [{ id: 't1', targetId: 'niuge', timestamp: new Date(2024, 4, 22, 12, 29, 0) }],
+        loading: false,
+        error: null,
+      });
+
+      renderVote();
+      const niugeButton = screen.getByRole('button', { name: /牛哥/ });
+      await user.click(niugeButton);
+
+      expect(screen.queryByRole('button', { name: '確認：牛哥' })).toBe(null);
+    });
   });
 });

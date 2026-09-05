@@ -3,11 +3,14 @@ import {
   collection,
   doc,
   getDoc,
+  runTransaction,
   serverTimestamp,
   updateDoc,
   writeBatch,
 } from 'firebase/firestore';
 import { auth, db } from '../firebase.js';
+
+export const APPEAL_CONFIRMATIONS_REQUIRED = 3;
 
 function assertAuthenticatedMember(currentMember) {
   if (currentMember?.active === false) {
@@ -132,4 +135,83 @@ export async function resolveToken({ groupId, tokenId, action, currentMember }) 
   });
 
   return batch.commit();
+}
+
+// ---- 申訴功能：用來撤銷不合理或記錯的紀錄 ----
+// 資料模型：在既有的report文件上「額外」加兩個欄位(appealedAt, appealConfirmedBy)，
+// 不新增collection、不動原本的建立流程——一筆report在被申訴之前完全不會有這兩個欄位，
+// 舊資料、還沒被申訴過的資料都不受影響。
+// 達到APPEAL_CONFIRMATIONS_REQUIRED(3)人確認後直接刪除該report文件；
+// 豬公的硬幣數/成員總Token數是從reports collection即時算出來的(useGroup.js的
+// withReportTotals)，文件一刪除，該成員的totalTokens、3D豬公裡的硬幣數會自動跟著減少，
+// 不需要另外處理「消除硬幣」這件事。
+
+// 只有這筆紀錄的當事人(被記錄的那個人，targetId本人)能對自己的紀錄提出申訴。
+export async function fileAppeal({ groupId, reportId, currentMember }) {
+  assertAuthenticatedMember(currentMember);
+
+  if (!groupId || !reportId) {
+    throw new Error('A report is required.');
+  }
+
+  const reportRef = doc(db, 'groups', groupId, 'reports', reportId);
+  const snapshot = await getDoc(reportRef);
+  if (!snapshot.exists()) {
+    throw new Error('The report no longer exists.');
+  }
+
+  const data = snapshot.data();
+  if (data.targetId !== currentMember.id) {
+    throw new Error('Only the record owner can appeal this record.');
+  }
+  if (data.appealedAt) {
+    throw new Error('This record already has an active appeal.');
+  }
+
+  return updateDoc(reportRef, {
+    appealedAt: serverTimestamp(),
+    appealConfirmedBy: [],
+  });
+}
+
+// 其他成員(不能是這筆紀錄的當事人)對申訴中的紀錄按下「確認」。用transaction讀取+
+// 判斷+寫入是同一個原子操作，避免「兩個人幾乎同時按確認」時，其中一次確認被覆蓋掉、
+// 或兩邊都以為自己不是第3個確認因而都沒有觸發刪除的競態問題。
+export async function confirmAppeal({ groupId, reportId, currentMember }) {
+  assertAuthenticatedMember(currentMember);
+
+  if (!groupId || !reportId) {
+    throw new Error('A report is required.');
+  }
+
+  const reportRef = doc(db, 'groups', groupId, 'reports', reportId);
+
+  return runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(reportRef);
+    if (!snapshot.exists()) {
+      throw new Error('The report no longer exists.');
+    }
+
+    const data = snapshot.data();
+    if (!data.appealedAt) {
+      throw new Error('This record does not have an active appeal.');
+    }
+    if (data.targetId === currentMember.id) {
+      throw new Error('The record owner cannot confirm their own appeal.');
+    }
+
+    const confirmedBy = Array.isArray(data.appealConfirmedBy) ? data.appealConfirmedBy : [];
+    if (confirmedBy.includes(currentMember.id)) {
+      throw new Error('This member has already confirmed the appeal.');
+    }
+
+    const nextConfirmedBy = [...confirmedBy, currentMember.id];
+    if (nextConfirmedBy.length >= APPEAL_CONFIRMATIONS_REQUIRED) {
+      transaction.delete(reportRef);
+      return { deleted: true, confirmedBy: nextConfirmedBy };
+    }
+
+    transaction.update(reportRef, { appealConfirmedBy: nextConfirmedBy });
+    return { deleted: false, confirmedBy: nextConfirmedBy };
+  });
 }

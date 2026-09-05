@@ -69,7 +69,7 @@ describe('App', () => {
       currentMember: { id: 'member-1', name: '你' },
     });
 
-    const historyLink = screen.getByRole('link', { name: '歷史紀錄' });
+    const historyLink = screen.getByRole('link', { name: '記錄' });
     const homeLink = screen.getByRole('link', { name: '首頁' });
 
     expect(historyLink.getAttribute('aria-current')).toBe('page');
@@ -96,7 +96,7 @@ describe('App', () => {
     });
 
     expect(screen.getByRole('heading', { name: '歷史紀錄' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: '歷史紀錄' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: '記錄' }).getAttribute('aria-current')).toBe('page');
 
     await user.click(screen.getByRole('link', { name: '設定' }));
 

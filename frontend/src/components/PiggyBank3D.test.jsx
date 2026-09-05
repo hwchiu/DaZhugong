@@ -103,4 +103,36 @@ describe('PiggyBank3D', () => {
     });
     expect(screen.getByText('已依系統設定關閉動態效果。')).toBeTruthy();
   });
+
+  it('accepts a weatherCode prop without crashing even when WebGL is unavailable', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+
+    render(
+      <PiggyBank3D
+        members={[{ id: 'member', name: '小美', color: '#ec4899', totalTokens: 3 }]}
+        weatherCode={61}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('img', { name: /小豬撲滿.*3 Token/ })).toBeTruthy();
+    });
+  });
+
+  it('renders a compact circular variant without the summary badge or explanatory caption text', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+
+    const { container } = render(
+      <PiggyBank3D
+        members={[{ id: 'member', name: '小美', color: '#ec4899', totalTokens: 5 }]}
+        size="compact"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('img', { name: /小豬撲滿.*5 Token/ })).toBeTruthy();
+    });
+    expect(screen.queryByText('WebGL 無法使用，改以靜態小豬呈現。')).toBe(null);
+    expect(container.querySelector('figure').className).toContain('rounded-full');
+  });
 });

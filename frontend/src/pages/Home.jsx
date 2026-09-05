@@ -6,7 +6,6 @@ import LiveClock from '../components/LiveClock.jsx';
 import MemberAvatar from '../components/MemberAvatar.jsx';
 import { HistoryIcon, HomeIcon, SettingsIcon, StatsIcon, TokenIcon, VoteIcon } from '../components/NavIcons.jsx';
 import PendingBanner from '../components/PendingBanner.jsx';
-import WeatherBackground from '../components/WeatherBackground.jsx';
 import { pickRandomGreeting } from '../data/greetings.js';
 import { useGroup } from '../hooks/useGroup.js';
 import { useTokens } from '../hooks/useTokens.js';
@@ -222,7 +221,7 @@ export default function Home() {
   const mood = getMoodForCount(todayTotal);
 
   return (
-    <section className="home-hero flex flex-col bg-gradient-to-b from-orange-50 via-rose-50 to-orange-50 px-4 text-stone-900">
+    <section className="home-hero flex flex-col bg-gradient-to-b from-[var(--brand-bg)] via-white to-[var(--brand-bg)] px-4 text-stone-900">
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col gap-3 pb-6 pt-4">
         <div className="flex items-center gap-2">
           <button
@@ -263,7 +262,6 @@ export default function Home() {
         </div>
 
         <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden rounded-[1.75rem]">
-          <WeatherBackground weatherCode={weather?.weatherCode} />
           {loading || loadError ? (
             <div
               aria-hidden="true"
@@ -285,7 +283,7 @@ export default function Home() {
               )}
               errorFallback={({ retry }) => <PiggyBankErrorFallback retry={retry} />}
             >
-              {(PiggyBank3D) => <PiggyBank3D members={members} />}
+              {(PiggyBank3D) => <PiggyBank3D members={members} weatherCode={weather?.weatherCode} />}
             </LazyBoundary>
           )}
         </div>
@@ -320,9 +318,9 @@ export default function Home() {
             <Link
               to="/history"
               aria-label="歷史紀錄"
-              className="ml-3 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-stone-100 text-lg text-stone-700 transition hover:bg-stone-200"
+              className="ml-3 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-stone-100 text-stone-700 transition hover:bg-stone-200"
             >
-              📋
+              <HistoryIcon className="h-5 w-5" />
             </Link>
           </div>
         </div>

@@ -201,6 +201,64 @@ service cloud.firestore {
         && isMember(groupId, request.resource.data.reporterId);
     }
 
+    // ---- 申訴功能：撤銷不合理或記錯的紀錄 ----
+    // 資料模型：在既有report文件「額外」加appealedAt/appealConfirmedBy兩個欄位，
+    // 沒被申訴過的文件完全不會有這兩個欄位，不影響原本的建立規則(validReportCreate等)。
+
+    // 核心欄位(targetId/reporterId/timestamp/reason)在申訴流程中一律不能被更動，
+    // 這裡把這個檢查獨立出來，file跟confirm兩種update都要用同一套。
+    function reportIdentityUnchangedOnAppealUpdate() {
+      return request.resource.data.targetId == resource.data.targetId
+        && request.resource.data.reporterId == resource.data.reporterId
+        && request.resource.data.timestamp == resource.data.timestamp
+        && (
+          resource.data.keys().hasAny(['reason'])
+            ? request.resource.data.reason == resource.data.reason
+            : !request.resource.data.keys().hasAny(['reason'])
+        );
+    }
+
+    // 提出申訴：只有這筆紀錄的當事人(targetId本人)可以做，而且必須是還沒申訴過
+    // (沒有appealedAt欄位，或者欄位是null)的紀錄——不能對同一筆紀錄重複申訴。
+    function validAppealFileUpdate(groupId, tokenId) {
+      return (!resource.data.keys().hasAny(['appealedAt']) || resource.data.appealedAt == null)
+        && reportIdentityUnchangedOnAppealUpdate()
+        && request.resource.data.appealedAt == request.time
+        && request.resource.data.appealConfirmedBy == []
+        && request.resource.data.keys().hasAll(['appealedAt', 'appealConfirmedBy'])
+        && isMember(groupId, resource.data.targetId)
+        && request.auth.uid == get(memberPath(groupId, resource.data.targetId)).data.authUid;
+    }
+
+    // 確認申訴：陣列只能一次增加剛好一筆，而且新增的那個人必須是「目前送出這個請求的
+    // 已登入成員」本人(不能幫別人蓋確認)、不能是這筆紀錄的當事人(不能自己確認自己的申訴)、
+    // 也不能是已經確認過的人(不能重複確認衝票數)。用陣列切片比對「除了最後一個新加的
+    // 元素之外，前面都跟原本一樣」，確保不是整個陣列被任意替換掉。
+    function validAppealConfirmUpdate(groupId, tokenId) {
+      let before = resource.data.appealConfirmedBy;
+      let after = request.resource.data.appealConfirmedBy;
+      let newMemberId = after[before.size()];
+      return resource.data.keys().hasAll(['appealedAt', 'appealConfirmedBy'])
+        && resource.data.appealedAt != null
+        && reportIdentityUnchangedOnAppealUpdate()
+        && request.resource.data.appealedAt == resource.data.appealedAt
+        && request.resource.data.keys() == resource.data.keys()
+        && after.size() == before.size() + 1
+        && after[0:before.size()] == before
+        && newMemberId != resource.data.targetId
+        && !before.hasAny([newMemberId])
+        && isMember(groupId, newMemberId)
+        && request.auth.uid == get(memberPath(groupId, newMemberId)).data.authUid;
+    }
+
+    // 刪除：只有在「這筆紀錄已經有APPEAL_CONFIRMATIONS_REQUIRED(3)人以上確認申訴」的
+    // 狀態下才允許刪除——用resource.data(刪除前、已經存在的文件狀態)檢查，
+    // 不是用request.resource(刪除沒有這個東西)，確保不是隨便就能刪掉一筆紀錄。
+    function validAppealDelete(groupId, tokenId) {
+      return resource.data.keys().hasAll(['appealConfirmedBy'])
+        && resource.data.appealConfirmedBy.size() >= 3;
+    }
+
     match /groups/{groupId} {
       allow read: if true;
       allow write: if false;
@@ -224,7 +282,8 @@ service cloud.firestore {
       match /reports/{tokenId} {
         allow read: if true;
         allow create: if validReportCreate(groupId, tokenId) || validDirectReportCreate(groupId, tokenId);
-        allow update, delete: if false;
+        allow update: if validAppealFileUpdate(groupId, tokenId) || validAppealConfirmUpdate(groupId, tokenId);
+        allow delete: if validAppealDelete(groupId, tokenId);
       }
 
       match /{document=**} {

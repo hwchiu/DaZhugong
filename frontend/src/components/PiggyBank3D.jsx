@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import piggyModelUrl from '../assets/piggy-bank-glass.glb?url';
+import WeatherBackground from './WeatherBackground.jsx';
 
 const MAX_RENDERED_TOKENS = 80;
 const DEFAULT_TOKEN_COLOR = '#f472b6';
@@ -155,33 +156,44 @@ function upgradeEnvironmentWithDailyPhoto({ THREE, renderer, scene, photoUrl, is
   }
 }
 
-function StaticPig({ totalCount, renderedCount, reducedMotion }) {
+function StaticPig({ totalCount, renderedCount, reducedMotion, compact = false }) {
   const label = `小豬撲滿，內含 ${totalCount} Token，畫面顯示 ${renderedCount} 個代表物件`;
+  const svg = (
+    <svg viewBox="0 0 240 190" className="h-auto w-full" aria-hidden="true">
+      <defs>
+        <linearGradient id="pig-body" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#fda4af" stopOpacity="0.92" />
+          <stop offset="100%" stopColor="#fb7185" stopOpacity="0.68" />
+        </linearGradient>
+      </defs>
+      <ellipse cx="113" cy="105" rx="78" ry="57" fill="url(#pig-body)" stroke="#9f1239" strokeWidth="4" />
+      <circle cx="165" cy="82" r="39" fill="#fda4af" fillOpacity="0.9" stroke="#9f1239" strokeWidth="4" />
+      <path d="M141 53 L145 25 L165 48 Z" fill="#fb7185" stroke="#9f1239" strokeWidth="4" strokeLinejoin="round" />
+      <path d="M174 47 L194 25 L195 59 Z" fill="#fb7185" stroke="#9f1239" strokeWidth="4" strokeLinejoin="round" />
+      <ellipse cx="192" cy="91" rx="24" ry="17" fill="#fecdd3" stroke="#9f1239" strokeWidth="4" />
+      <circle cx="184" cy="91" r="3.5" fill="#881337" />
+      <circle cx="198" cy="91" r="3.5" fill="#881337" />
+      <circle cx="169" cy="71" r="4.5" fill="#0f172a" />
+      <rect x="62" y="151" width="24" height="26" rx="10" fill="#fb7185" stroke="#9f1239" strokeWidth="4" />
+      <rect x="132" y="151" width="24" height="26" rx="10" fill="#fb7185" stroke="#9f1239" strokeWidth="4" />
+      <rect x="83" y="55" width="54" height="7" rx="3.5" fill="#4c0519" />
+      <circle cx="95" cy="110" r="12" fill="#facc15" stroke="#854d0e" strokeWidth="3" />
+      <circle cx="123" cy="126" r="10" fill="#38bdf8" stroke="#075985" strokeWidth="3" />
+    </svg>
+  );
+
+  if (compact) {
+    return (
+      <div role="img" aria-label={label} className="flex h-full w-full items-center justify-center p-1.5">
+        {svg}
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-64 flex-col items-center justify-center px-4 text-center">
       <div role="img" aria-label={label} className="w-full max-w-56">
-        <svg viewBox="0 0 240 190" className="h-auto w-full" aria-hidden="true">
-          <defs>
-            <linearGradient id="pig-body" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#fda4af" stopOpacity="0.92" />
-              <stop offset="100%" stopColor="#fb7185" stopOpacity="0.68" />
-            </linearGradient>
-          </defs>
-          <ellipse cx="113" cy="105" rx="78" ry="57" fill="url(#pig-body)" stroke="#9f1239" strokeWidth="4" />
-          <circle cx="165" cy="82" r="39" fill="#fda4af" fillOpacity="0.9" stroke="#9f1239" strokeWidth="4" />
-          <path d="M141 53 L145 25 L165 48 Z" fill="#fb7185" stroke="#9f1239" strokeWidth="4" strokeLinejoin="round" />
-          <path d="M174 47 L194 25 L195 59 Z" fill="#fb7185" stroke="#9f1239" strokeWidth="4" strokeLinejoin="round" />
-          <ellipse cx="192" cy="91" rx="24" ry="17" fill="#fecdd3" stroke="#9f1239" strokeWidth="4" />
-          <circle cx="184" cy="91" r="3.5" fill="#881337" />
-          <circle cx="198" cy="91" r="3.5" fill="#881337" />
-          <circle cx="169" cy="71" r="4.5" fill="#0f172a" />
-          <rect x="62" y="151" width="24" height="26" rx="10" fill="#fb7185" stroke="#9f1239" strokeWidth="4" />
-          <rect x="132" y="151" width="24" height="26" rx="10" fill="#fb7185" stroke="#9f1239" strokeWidth="4" />
-          <rect x="83" y="55" width="54" height="7" rx="3.5" fill="#4c0519" />
-          <circle cx="95" cy="110" r="12" fill="#facc15" stroke="#854d0e" strokeWidth="3" />
-          <circle cx="123" cy="126" r="10" fill="#38bdf8" stroke="#075985" strokeWidth="3" />
-        </svg>
+        {svg}
       </div>
       <p className="mt-2 text-sm font-semibold text-slate-900">
         WebGL 無法使用，改以靜態小豬呈現。
@@ -204,7 +216,7 @@ function buildStarShapePoints(THREE, outerR, innerR) {
   return points;
 }
 
-export default function PiggyBank3D({ members = [] }) {
+export default function PiggyBank3D({ members = [], weatherCode = undefined, size = 'full' }) {
   const hostRef = useRef(null);
   const [reducedMotion, setReducedMotion] = useState(prefersReducedMotion);
   const [renderFailed, setRenderFailed] = useState(false);
@@ -596,30 +608,47 @@ export default function PiggyBank3D({ members = [] }) {
   const visualSummary = sample.totalCount > sample.renderedCount
     ? `以 ${sample.renderedCount} 個代表物件呈現，共 ${sample.totalCount} Token`
     : `共 ${sample.totalCount} Token`;
+  const isCompact = size === 'compact';
+  const hostSizeClassName = isCompact ? 'relative h-16 w-16' : 'relative h-72 w-full';
+  const figureClassName = isCompact
+    ? 'relative inline-flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/40 bg-gradient-to-br from-rose-200/40 to-white/10'
+    : 'relative overflow-hidden rounded-[1.75rem] border border-white/15 bg-gradient-to-br from-rose-300/20 to-white/5';
 
   return (
-    <figure className="relative overflow-hidden rounded-[1.75rem] border border-white/15 bg-gradient-to-br from-rose-300/20 to-white/5">
-      <div className="absolute left-4 top-4 z-10 rounded-full bg-slate-950/80 px-3 py-1 text-xs font-semibold text-white">
-        {visualSummary}
-      </div>
+    <figure className={figureClassName}>
+      {!isCompact && (
+        <div className="absolute left-4 top-4 z-10 rounded-full bg-slate-950/80 px-3 py-1 text-xs font-semibold text-white">
+          {visualSummary}
+        </div>
+      )}
       {renderFailed ? (
         <StaticPig
           totalCount={sample.totalCount}
           renderedCount={sample.renderedCount}
           reducedMotion={reducedMotion}
+          compact={isCompact}
         />
       ) : (
         <>
-          {/* eslint-disable-next-line jsx-a11y/alt-text */}
-          <img
-            src={backgroundPhotoUrl}
-            alt=""
-            aria-hidden="true"
-            className="absolute inset-0 h-full w-full object-cover blur-[2px] scale-105"
-          />
+          {!isCompact && (
+            <>
+              {/* eslint-disable-next-line jsx-a11y/alt-text */}
+              <img
+                src={backgroundPhotoUrl}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 h-full w-full object-cover blur-[2px] scale-105"
+              />
+              {/* 天氣特效疊在背景照片「之上」、3D畫布「之下」：畫布本身透明，
+                  沒有豬公擋住的地方會同時透出照片+天氣特效，豬公不透明的地方蓋在最上層。
+                  縮小版(compact，例如統計頁摘要卡裡的迷你豬公)故意不做背景照片跟天氣特效，
+                  這麼小的尺寸放這些反而只會模糊一片，看不出細節。 */}
+              <WeatherBackground weatherCode={weatherCode} />
+            </>
+          )}
           <div
             ref={hostRef}
-            className="relative h-72 w-full"
+            className={hostSizeClassName}
             role="img"
             aria-label={`可水平拖曳旋轉的小豬撲滿，內含 ${sample.totalCount} Token`}
           />
