@@ -244,7 +244,12 @@ service cloud.firestore {
         && request.resource.data.appealedAt == resource.data.appealedAt
         && request.resource.data.keys() == resource.data.keys()
         && after.size() == before.size() + 1
-        && after[0:before.size()] == before
+        // 注意：故意不用陣列切片(after[0:before.size()])比對前綴，因為當before
+        // 為空陣列時，Firestore模擬器的空切片(start==end==0)會觸發模擬器本身的
+        // index-out-of-bound錯誤(而非單純回傳false)，導致規則評估直接失敗、
+        // 部署測試連帶掛掉。改用concat()重組陣列比對，語意相同但不會踩到這個
+        // 空切片的實作問題。
+        && after == before.concat([newMemberId])
         && newMemberId != resource.data.targetId
         && !before.hasAny([newMemberId])
         && isMember(groupId, newMemberId)
