@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { auth, db } from '../firebase.js';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
-import { applyMemberColorOverride } from '../data/memberAvatars.js';
 
 const SAFE_AUTH_ERROR_MESSAGE = 'Unable to verify your account access right now.';
 
@@ -108,10 +107,10 @@ async function reconcileSignedInUser(user, generation) {
 
   setSignedInState({
     firebaseUser: user,
-    currentMember: applyMemberColorOverride({
+    currentMember: {
       id: memberDoc.id,
       ...(typeof memberDoc.data === 'function' ? memberDoc.data() : {}),
-    }),
+    },
   });
 }
 

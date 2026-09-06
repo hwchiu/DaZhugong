@@ -11,7 +11,6 @@ export function useDailyTheme() {
     const shades = deriveColorShades(color.hex);
     const root = document.documentElement;
 
-    root.style.setProperty('--brand-bg', shades.bg);
     root.style.setProperty('--brand-50', shades[50]);
     root.style.setProperty('--brand-500', shades[500]);
     root.style.setProperty('--brand-600', shades[600]);
@@ -19,7 +18,6 @@ export function useDailyTheme() {
     root.style.setProperty('--brand-name', `"${color.name} ${color.reading}"`);
 
     return () => {
-      root.style.removeProperty('--brand-bg');
       root.style.removeProperty('--brand-50');
       root.style.removeProperty('--brand-500');
       root.style.removeProperty('--brand-600');

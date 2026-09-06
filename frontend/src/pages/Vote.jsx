@@ -2,11 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import MemberAvatar from '../components/MemberAvatar.jsx';
 import { useGroup } from '../hooks/useGroup.js';
-import { useNowTicker } from '../hooks/useNowTicker.js';
 import { useTokens } from '../hooks/useTokens.js';
 import { reportAndConfirmToken } from '../services/tokenService.js';
 import { useAuthStore } from '../store/authStore.js';
-import { formatCooldownRemaining, getCooldownStatus } from '../utils/cooldown.js';
 
 const SAFE_LOAD_ERROR_MESSAGE = '目前無法載入投票資料，請稍後再試。';
 const SAFE_SUBMIT_ERROR_MESSAGE = '目前無法儲存這筆紀錄，請稍後再試。';
@@ -56,7 +54,6 @@ export default function Vote() {
   const [feedback, setFeedback] = useState({ tone: null, message: '' });
   const reasonInputRef = useRef(null);
 
-  const now = useNowTicker();
   const totalsByTargetId = useMemo(() => buildConfirmedTotals(tokens), [tokens]);
   const eligibleMembers = useMemo(
     () =>
@@ -65,9 +62,8 @@ export default function Vote() {
         .map((member) => ({
           ...member,
           confirmedCount: totalsByTargetId.get(member.id) ?? 0,
-          cooldown: getCooldownStatus(tokens, member.id, now),
         })),
-    [currentMember?.id, members, tokens, totalsByTargetId, now],
+    [currentMember?.id, members, totalsByTargetId],
   );
   const selectedMember = eligibleMembers.find((member) => member.id === selectedId) ?? null;
   const selectedTargetMember =
@@ -81,8 +77,7 @@ export default function Vote() {
       return;
     }
 
-    const stillEligible = eligibleMembers.find((member) => member.id === selectedId);
-    if (!stillEligible || stillEligible.cooldown.inCooldown) {
+    if (!eligibleMembers.some((member) => member.id === selectedId)) {
       setSelectedId('');
     }
   }, [eligibleMembers, selectedId]);
@@ -94,7 +89,7 @@ export default function Vote() {
   }, [modalOpen]);
 
   function handleSelect(member) {
-    if (pending || member?.cooldown?.inCooldown) {
+    if (pending) {
       return;
     }
 
@@ -168,7 +163,7 @@ export default function Vote() {
   }
 
   return (
-    <section className="app-page bg-gradient-to-b from-[var(--brand-bg)] via-white to-[var(--brand-bg)] px-4 text-slate-900">
+    <section className="app-page bg-gradient-to-b from-rose-50 via-pink-50 to-orange-50 px-4 text-slate-900">
       <div className="mx-auto flex w-full max-w-md flex-col gap-4">
         <section className="rounded-[2rem] bg-white/95 p-6 shadow-lg shadow-rose-100">
           <p className="text-brand text-sm font-medium uppercase tracking-[0.3em]">DaZhugong</p>
@@ -217,20 +212,14 @@ export default function Vote() {
                   {eligibleMembers.map((member) => {
                     const selected = member.id === selectedMember?.id;
                     const memberName = getMemberName(member);
-                    const { cooldown } = member;
-                    const disabled = pending || cooldown.inCooldown;
 
                     return (
                       <button
                         key={member.id}
                         type="button"
-                        disabled={disabled}
+                        disabled={pending}
                         aria-pressed={selected}
-                        aria-label={
-                          cooldown.inCooldown
-                            ? `${memberName}，冷卻中還剩 ${formatCooldownRemaining(cooldown.remainingMs)}，暫時無法再次投票`
-                            : `${memberName}，已確認 ${member.confirmedCount} 票`
-                        }
+                        aria-label={`${memberName}，已確認 ${member.confirmedCount} 票`}
                         onClick={() => handleSelect(member)}
                         className={`flex min-h-44 flex-col items-center rounded-[1.75rem] border px-4 py-4 text-center transition focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-[#9f1239] disabled:cursor-not-allowed disabled:opacity-60 ${
                           selected
@@ -240,25 +229,11 @@ export default function Vote() {
                       >
                         <MemberAvatar member={member} size="md" />
                         <span className="mt-3 text-base font-semibold text-slate-900">{memberName}</span>
-                        {cooldown.inCooldown ? (
-                          <span
-                            role="timer"
-                            aria-live="off"
-                            className="mt-2 rounded-full bg-slate-200 px-3 py-1 text-sm font-bold tabular-nums text-slate-700"
-                          >
-                            冷卻中 {formatCooldownRemaining(cooldown.remainingMs)}
-                          </span>
-                        ) : (
-                          <span className="bg-brand-soft text-brand mt-2 rounded-full px-3 py-1 text-sm font-medium">
-                            已確認 {member.confirmedCount} 票
-                          </span>
-                        )}
+                        <span className="bg-brand-soft text-brand mt-2 rounded-full px-3 py-1 text-sm font-medium">
+                          已確認 {member.confirmedCount} 票
+                        </span>
                         <span className="mt-3 text-sm leading-6 text-slate-600">
-                          {cooldown.inCooldown
-                            ? '剛被投過票，需要等冷卻時間結束。'
-                            : selected
-                              ? '已選擇，準備填寫原因。'
-                              : '點一下即可選擇。'}
+                          {selected ? '已選擇，準備填寫原因。' : '點一下即可選擇。'}
                         </span>
                       </button>
                     );

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase.js';
-import { applyMemberColorOverride } from '../data/memberAvatars.js';
 
 const SAFE_ERROR_MESSAGE = 'Unable to load group data right now.';
 
@@ -27,10 +26,10 @@ function compareMembers(left, right) {
 
 function toMemberDoc(docSnapshot) {
   const data = typeof docSnapshot?.data === 'function' ? docSnapshot.data() ?? {} : {};
-  return applyMemberColorOverride({
+  return {
     id: docSnapshot.id,
     ...data,
-  });
+  };
 }
 
 function toGroupDoc(groupSnapshot) {
