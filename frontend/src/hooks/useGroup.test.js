@@ -102,6 +102,31 @@ describe('useGroup', () => {
     expect(firestoreMock.collection).toHaveBeenCalledWith(firestoreMock.db, 'groups', 'group-1', 'reports');
   });
 
+  it('overrides the color of members with a fixed brand color, leaving others untouched', async () => {
+    const { useGroup } = await loadHook();
+
+    const { result } = renderHook(() => useGroup('group-1'));
+
+    const [groupListener, membersListener, reportsListener] = firestoreMock.state.subscriptions;
+    await act(async () => {
+      groupListener.next(makeSnapshot({ id: 'group-1', data: { name: 'Lunch Crew' } }));
+      membersListener.next(makeSnapshot({
+        docs: [
+          makeDoc('along', { name: '阿龍', color: '#111111', active: true }),
+          makeDoc('friend', { name: '阿明', color: '#222222', active: true }),
+        ],
+      }));
+      reportsListener.next(makeSnapshot({ docs: [] }));
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    const along = result.current.members.find((member) => member.id === 'along');
+    const friend = result.current.members.find((member) => member.id === 'friend');
+    expect(along.color).toBe('#eab308');
+    expect(friend.color).toBe('#222222');
+  });
+
   it('ignores legacy inactive member totals and derives totals from reports only', async () => {
     const { useGroup } = await loadHook();
     const { result } = renderHook(() => useGroup('group-1'));
@@ -126,6 +151,40 @@ describe('useGroup', () => {
     expect(result.current.members).toEqual([
       { id: 'inactive-member', name: 'Zeta', active: false, totalTokens: 1 },
     ]);
+  });
+
+  it('sums tokenValue instead of counting reports, so a special token (value 5) adds 5 not 1', async () => {
+    const { useGroup } = await loadHook();
+    const { result } = renderHook(() => useGroup('group-1'));
+
+    const [groupListener, membersListener, reportsListener] = firestoreMock.state.subscriptions;
+    await act(async () => {
+      groupListener.next(makeSnapshot({ id: 'group-1', data: { name: 'Lunch Crew' } }));
+      membersListener.next(makeSnapshot({
+        docs: [makeDoc('alpha', { name: 'Alpha', active: true })],
+      }));
+      reportsListener.next(makeSnapshot({
+        docs: [
+          // 一般Token(舊資料，沒有tokenValue欄位) +1
+          makeDoc('report-1', { targetId: 'alpha' }),
+          // 一般Token(新資料，明確tokenValue=1) +1
+          makeDoc('report-2', { targetId: 'alpha', tokenType: 'NORMAL', tokenValue: 1 }),
+          // 特殊Token：displayTokenCount=1(只是「一筆」交易)，但tokenValue=5 +5
+          makeDoc('report-3', {
+            targetId: 'alpha',
+            tokenType: 'SPECIAL_5X',
+            displayTokenCount: 1,
+            tokenValue: 5,
+            source: 'PIG_RUB_EASTER_EGG',
+          }),
+        ],
+      }));
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    const alpha = result.current.members.find((member) => member.id === 'alpha');
+    expect(alpha.totalTokens).toBe(7); // 1 + 1 + 5，不是3(COUNT筆數)
   });
 
   it('returns a null group when the document does not exist', async () => {

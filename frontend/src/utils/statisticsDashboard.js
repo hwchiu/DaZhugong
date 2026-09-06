@@ -6,6 +6,7 @@ import {
   isWithinRange,
 } from './statisticsPeriod.js';
 import { REASON_CATEGORIES, categorizeReason } from './reasonCategories.js';
+import { reportTokenValue } from './specialToken.js';
 
 // 只聚焦午餐時間三個時段(spec 16-17)，不做全天24小時熱區圖。
 export const LUNCH_TIME_SLOTS = ['12:00-12:30', '12:30-13:00', '13:00-13:30'];
@@ -46,6 +47,13 @@ function isSameLocalDay(date, reference) {
     && date.getDate() === reference.getDate();
 }
 
+// AC15：所有統計一律用SUM(tokenValue)，不是COUNT(report筆數)——特殊Token
+// (displayTokenCount=1、tokenValue=5)只算1筆事件，但要貢獻5點數值，否則圖表上
+// 一顆5倍大的特殊Token只會顯示成跟一般Token一樣的+1，跟畫面上的「+5」矛盾。
+function sumTokenValue(reports) {
+  return reports.reduce((sum, report) => sum + reportTokenValue(report), 0);
+}
+
 function buildDailyTrend(period, currentReports, allMyReports, referenceDate) {
   if (period.type === 'all') {
     const earliestMs = allMyReports.reduce((min, report) => {
@@ -57,10 +65,10 @@ function buildDailyTrend(period, currentReports, allMyReports, referenceDate) {
     return buckets.map((bucket) => ({
       date: bucket.key,
       dayOfWeek: bucket.label,
-      tokenCount: allMyReports.filter((report) => {
+      tokenCount: sumTokenValue(allMyReports.filter((report) => {
         const ms = toMillis(report.timestamp);
         return ms >= bucket.start.getTime() && ms < bucket.end.getTime() + 86_400_000;
-      }).length,
+      })),
     }));
   }
 
@@ -68,16 +76,22 @@ function buildDailyTrend(period, currentReports, allMyReports, referenceDate) {
   return days.map((day) => ({
     date: day.date,
     dayOfWeek: day.dayOfWeek,
-    tokenCount: currentReports.filter((report) => isSameLocalDay(new Date(toMillis(report.timestamp)), day.dateObj)).length,
+    tokenCount: sumTokenValue(
+      currentReports.filter((report) => isSameLocalDay(new Date(toMillis(report.timestamp)), day.dateObj)),
+    ),
   }));
 }
 
+// tokenCount：AC17要求的「原因統計加總必須包含特殊Token這5個」，用SUM(tokenValue)。
+// eventCount：刻意維持單純的交易「筆數」(不受tokenValue影響)，這樣「這個原因平均
+// 每筆事件幾點」(averagePerEvent)才有意義——一筆特殊Token事件本身就是1筆，
+// 只是價值高，eventCount混進tokenValue反而會讓這個平均數失真。
 function buildReasonDistribution(currentReports, totalTokenCount) {
   const tally = new Map();
   for (const report of currentReports) {
     const categoryId = categorizeReason(report?.reason);
     const entry = tally.get(categoryId) ?? { tokenCount: 0, eventCount: 0 };
-    entry.tokenCount += 1;
+    entry.tokenCount += reportTokenValue(report);
     entry.eventCount += 1;
     tally.set(categoryId, entry);
   }
@@ -112,7 +126,7 @@ function buildLunchTimeHeatmap(currentReports) {
     }
     const dayIndex = getMondayFirstDayIndex(date);
     const key = `${dayIndex}-${slotIndex}`;
-    tally.set(key, (tally.get(key) ?? 0) + 1);
+    tally.set(key, (tally.get(key) ?? 0) + reportTokenValue(report));
   }
 
   const cells = [];
@@ -147,8 +161,8 @@ function computeDashboardCore({ scopedReports, periodType, periodOffset, referen
     ? scopedReports.filter((report) => isWithinRange(toMillis(report.timestamp), previousPeriod))
     : [];
 
-  const currentTokenCount = currentReports.length;
-  const previousTokenCount = previousReports.length;
+  const currentTokenCount = sumTokenValue(currentReports);
+  const previousTokenCount = sumTokenValue(previousReports);
   const changeRate = previousTokenCount === 0
     ? null
     : Math.round(((currentTokenCount - previousTokenCount) / previousTokenCount) * 1000) / 10;
@@ -205,7 +219,7 @@ export function buildGroupStatisticsDashboard({
   const tally = new Map();
   for (const report of currentReports) {
     if (!report?.targetId) continue;
-    tally.set(report.targetId, (tally.get(report.targetId) ?? 0) + 1);
+    tally.set(report.targetId, (tally.get(report.targetId) ?? 0) + reportTokenValue(report));
   }
 
   const totalTokenCount = rest.summary.currentTokenCount;

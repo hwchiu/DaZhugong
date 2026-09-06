@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase.js';
+import { applyMemberColorOverride } from '../data/memberAvatars.js';
+import { reportTokenValue } from '../utils/specialToken.js';
 
 const SAFE_ERROR_MESSAGE = 'Unable to load group data right now.';
 
@@ -26,10 +28,10 @@ function compareMembers(left, right) {
 
 function toMemberDoc(docSnapshot) {
   const data = typeof docSnapshot?.data === 'function' ? docSnapshot.data() ?? {} : {};
-  return {
+  return applyMemberColorOverride({
     id: docSnapshot.id,
     ...data,
-  };
+  });
 }
 
 function toGroupDoc(groupSnapshot) {
@@ -44,13 +46,16 @@ function toGroupDoc(groupSnapshot) {
   };
 }
 
+// AC14/AC41：豬公硬幣數、成員總Token數要用SUM(tokenValue)計算，不能只COUNT筆數，
+// 否則一顆價值5的特殊Token在畫面上只會被算成1。reportTokenValue()對舊資料
+// (沒有tokenValue欄位、這次功能上線之前寫入的紀錄)一律視為1，維持原本的計算結果不變。
 function withReportTotals(members, reports) {
   const totals = new Map();
 
   for (const report of reports) {
     const targetId = report?.targetId;
     if (typeof targetId === 'string') {
-      totals.set(targetId, (totals.get(targetId) ?? 0) + 1);
+      totals.set(targetId, (totals.get(targetId) ?? 0) + reportTokenValue(report));
     }
   }
 

@@ -56,13 +56,17 @@ function getWeatherLabel(code) {
 
 // 天氣資料改由父層(Home.jsx)透過 useWeather() 抓一次、往下傳，
 // 這樣同一份資料可以同時給這個chip跟WeatherBackground背景特效用，不用各自打兩次API。
-export default function DateWeatherBar({ weather, weatherFailed }) {
+export default function DateWeatherBar({ weather, weatherFailed, glass = false }) {
   return (
     <div
       role="status"
       aria-live="polite"
       aria-label={weather ? `目前天氣${getWeatherLabel(weather.weatherCode)}，約 ${Math.round(weather.temperature)} 度` : '天氣資訊暫時無法取得'}
-      className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 shadow-sm shadow-stone-200"
+      className={
+        glass
+          ? 'flex items-center gap-1.5 rounded-full bg-white/25 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-md'
+          : 'flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 shadow-sm shadow-stone-200'
+      }
     >
       {weather ? (
         <>

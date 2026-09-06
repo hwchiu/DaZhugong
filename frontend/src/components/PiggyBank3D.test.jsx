@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import PiggyBank3D, { getDailyBackgroundPhotoUrl, samplePiggyTokens } from './PiggyBank3D.jsx';
+import PiggyBank3D, { samplePiggyTokens } from './PiggyBank3D.jsx';
 
 afterEach(() => {
   cleanup();
@@ -49,45 +49,6 @@ describe('samplePiggyTokens', () => {
   });
 });
 
-describe('getDailyBackgroundPhotoUrl', () => {
-  it("builds a Picsum seed URL from today's date so it stays stable within a day", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 8, 3, 15, 0));
-
-    const url = getDailyBackgroundPhotoUrl();
-
-    expect(url).toBe('https://picsum.photos/seed/2026-09-03/1000/700');
-
-    vi.setSystemTime(new Date(2026, 8, 3, 23, 59));
-    expect(getDailyBackgroundPhotoUrl()).toBe(url);
-
-    vi.useRealTimers();
-  });
-
-  it('changes to a new seed on the next calendar day', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 8, 3, 23, 59));
-    const day1 = getDailyBackgroundPhotoUrl();
-
-    vi.setSystemTime(new Date(2026, 8, 4, 0, 1));
-    const day2 = getDailyBackgroundPhotoUrl();
-
-    expect(day2).not.toBe(day1);
-    expect(day2).toBe('https://picsum.photos/seed/2026-09-04/1000/700');
-
-    vi.useRealTimers();
-  });
-
-  it('accepts a custom width and height', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 0, 5));
-
-    expect(getDailyBackgroundPhotoUrl(400, 300)).toBe('https://picsum.photos/seed/2026-01-05/400/300');
-
-    vi.useRealTimers();
-  });
-});
-
 describe('PiggyBank3D', () => {
   it('shows an accessible static pig when WebGL is unavailable and notes reduced motion', async () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
@@ -102,5 +63,37 @@ describe('PiggyBank3D', () => {
       expect(screen.getByRole('img', { name: /小豬撲滿.*12 Token/ })).toBeTruthy();
     });
     expect(screen.getByText('已依系統設定關閉動態效果。')).toBeTruthy();
+  });
+
+  it('accepts a weatherCode prop without crashing even when WebGL is unavailable', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+
+    render(
+      <PiggyBank3D
+        members={[{ id: 'member', name: '小美', color: '#ec4899', totalTokens: 3 }]}
+        weatherCode={61}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('img', { name: /小豬撲滿.*3 Token/ })).toBeTruthy();
+    });
+  });
+
+  it('renders a compact circular variant without the summary badge or explanatory caption text', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+
+    const { container } = render(
+      <PiggyBank3D
+        members={[{ id: 'member', name: '小美', color: '#ec4899', totalTokens: 5 }]}
+        size="compact"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('img', { name: /小豬撲滿.*5 Token/ })).toBeTruthy();
+    });
+    expect(screen.queryByText('WebGL 無法使用，改以靜態小豬呈現。')).toBe(null);
+    expect(container.querySelector('figure').className).toContain('rounded-full');
   });
 });

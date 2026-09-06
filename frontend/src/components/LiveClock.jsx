@@ -11,7 +11,7 @@ function formatTime(date) {
   return formatter.format(date);
 }
 
-export default function LiveClock() {
+export default function LiveClock({ glass = false }) {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -25,7 +25,11 @@ export default function LiveClock() {
     <div
       role="status"
       aria-label={`目前時間 ${timeLabel}`}
-      className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 shadow-sm shadow-stone-200"
+      className={
+        glass
+          ? 'flex items-center gap-1.5 rounded-full bg-white/25 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-md'
+          : 'flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 shadow-sm shadow-stone-200'
+      }
     >
       <span aria-hidden="true">🕐</span>
       <span>{timeLabel}</span>

@@ -171,6 +171,30 @@ describe('authStore', () => {
     expect(firebaseMock.signOut).not.toHaveBeenCalled();
   });
 
+  it('overrides currentMember color with the fixed brand color when the name matches', async () => {
+    const user = { uid: 'user-9', email: 'along@example.com' };
+    firebaseMock.getDocs.mockResolvedValue({
+      docs: [
+        {
+          id: 'member-9',
+          data: () => ({ authUid: 'user-9', name: '阿龍', color: '#111111' }),
+        },
+      ],
+    });
+
+    const { startAuthObserver, useAuthStore } = await loadAuthStore();
+    startAuthObserver();
+
+    getLatestSubscription().callback(user);
+    await flushMicrotasks();
+
+    expect(useAuthStore.getState().currentMember).toMatchObject({
+      id: 'member-9',
+      name: '阿龍',
+      color: '#eab308',
+    });
+  });
+
   it('ignores a stale successful lookup after signout', async () => {
     const userA = { uid: 'user-a' };
     const pendingLookup = createDeferred();

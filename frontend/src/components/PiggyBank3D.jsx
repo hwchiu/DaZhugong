@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import piggyModelUrl from '../assets/piggy-bank-glass.glb?url';
+import WeatherBackground from './WeatherBackground.jsx';
+import { getDailyBackgroundPhotoUrl } from '../utils/dailyBackgroundPhoto.js';
+import { createRubTracker } from '../utils/pigRubGesture.js';
+import { SPECIAL_TOKEN_SPIN_DURATION_MS } from '../utils/specialToken.js';
+
+// 重新匯出保留原本的呼叫路徑，避免其他還在用 `from './PiggyBank3D.jsx'` 引入
+// 這支函式的地方(例如既有測試)需要跟著改路徑；實際定義搬到 utils/dailyBackgroundPhoto.js
+// (獨立成輕量檔案，避免Home.jsx為了拿這支純函式而被迫靜態import這支含Three.js的檔案，
+// 讓lazy load失效)。
+export { getDailyBackgroundPhotoUrl } from '../utils/dailyBackgroundPhoto.js';
 
 const MAX_RENDERED_TOKENS = 80;
 const DEFAULT_TOKEN_COLOR = '#f472b6';
@@ -94,16 +104,6 @@ function prefersReducedMotion() {
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-// 每天固定一張、隔天自動換的背景照片：用Picsum Photos的seed功能，seed吃當天日期字串，
-// 同一天大家看到同一張、每天自動輪替下一張。Picsum不用API key、不用申請帳號，
-// 圖庫大約1000張真實攝影作品(來源是Unsplash攝影師)，唯一的取捨是主題不保證是風景，
-// 這是使用者已經確認接受的取捨(選過Picsum而不是需要API key的Unsplash)。
-export function getDailyBackgroundPhotoUrl(width = 1000, height = 700) {
-  const now = new Date();
-  const seed = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  return `https://picsum.photos/seed/${seed}/${width}/${height}`;
-}
-
 // 非同步把當天的背景照片包成環境貼圖，取代掉初始的RoomEnvironment，讓玻璃反光
 // 映出照片的色調。這是漸進式升級：一開始先用RoomEnvironment(不用等網路)，
 // 照片load好了才換上去，不會卡住整個3D場景的初始渲染。任何一步失敗都只是
@@ -155,33 +155,44 @@ function upgradeEnvironmentWithDailyPhoto({ THREE, renderer, scene, photoUrl, is
   }
 }
 
-function StaticPig({ totalCount, renderedCount, reducedMotion }) {
+function StaticPig({ totalCount, renderedCount, reducedMotion, compact = false }) {
   const label = `小豬撲滿，內含 ${totalCount} Token，畫面顯示 ${renderedCount} 個代表物件`;
+  const svg = (
+    <svg viewBox="0 0 240 190" className="h-auto w-full" aria-hidden="true">
+      <defs>
+        <linearGradient id="pig-body" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#fda4af" stopOpacity="0.92" />
+          <stop offset="100%" stopColor="#fb7185" stopOpacity="0.68" />
+        </linearGradient>
+      </defs>
+      <ellipse cx="113" cy="105" rx="78" ry="57" fill="url(#pig-body)" stroke="#9f1239" strokeWidth="4" />
+      <circle cx="165" cy="82" r="39" fill="#fda4af" fillOpacity="0.9" stroke="#9f1239" strokeWidth="4" />
+      <path d="M141 53 L145 25 L165 48 Z" fill="#fb7185" stroke="#9f1239" strokeWidth="4" strokeLinejoin="round" />
+      <path d="M174 47 L194 25 L195 59 Z" fill="#fb7185" stroke="#9f1239" strokeWidth="4" strokeLinejoin="round" />
+      <ellipse cx="192" cy="91" rx="24" ry="17" fill="#fecdd3" stroke="#9f1239" strokeWidth="4" />
+      <circle cx="184" cy="91" r="3.5" fill="#881337" />
+      <circle cx="198" cy="91" r="3.5" fill="#881337" />
+      <circle cx="169" cy="71" r="4.5" fill="#0f172a" />
+      <rect x="62" y="151" width="24" height="26" rx="10" fill="#fb7185" stroke="#9f1239" strokeWidth="4" />
+      <rect x="132" y="151" width="24" height="26" rx="10" fill="#fb7185" stroke="#9f1239" strokeWidth="4" />
+      <rect x="83" y="55" width="54" height="7" rx="3.5" fill="#4c0519" />
+      <circle cx="95" cy="110" r="12" fill="#facc15" stroke="#854d0e" strokeWidth="3" />
+      <circle cx="123" cy="126" r="10" fill="#38bdf8" stroke="#075985" strokeWidth="3" />
+    </svg>
+  );
+
+  if (compact) {
+    return (
+      <div role="img" aria-label={label} className="flex h-full w-full items-center justify-center p-1.5">
+        {svg}
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-64 flex-col items-center justify-center px-4 text-center">
       <div role="img" aria-label={label} className="w-full max-w-56">
-        <svg viewBox="0 0 240 190" className="h-auto w-full" aria-hidden="true">
-          <defs>
-            <linearGradient id="pig-body" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#fda4af" stopOpacity="0.92" />
-              <stop offset="100%" stopColor="#fb7185" stopOpacity="0.68" />
-            </linearGradient>
-          </defs>
-          <ellipse cx="113" cy="105" rx="78" ry="57" fill="url(#pig-body)" stroke="#9f1239" strokeWidth="4" />
-          <circle cx="165" cy="82" r="39" fill="#fda4af" fillOpacity="0.9" stroke="#9f1239" strokeWidth="4" />
-          <path d="M141 53 L145 25 L165 48 Z" fill="#fb7185" stroke="#9f1239" strokeWidth="4" strokeLinejoin="round" />
-          <path d="M174 47 L194 25 L195 59 Z" fill="#fb7185" stroke="#9f1239" strokeWidth="4" strokeLinejoin="round" />
-          <ellipse cx="192" cy="91" rx="24" ry="17" fill="#fecdd3" stroke="#9f1239" strokeWidth="4" />
-          <circle cx="184" cy="91" r="3.5" fill="#881337" />
-          <circle cx="198" cy="91" r="3.5" fill="#881337" />
-          <circle cx="169" cy="71" r="4.5" fill="#0f172a" />
-          <rect x="62" y="151" width="24" height="26" rx="10" fill="#fb7185" stroke="#9f1239" strokeWidth="4" />
-          <rect x="132" y="151" width="24" height="26" rx="10" fill="#fb7185" stroke="#9f1239" strokeWidth="4" />
-          <rect x="83" y="55" width="54" height="7" rx="3.5" fill="#4c0519" />
-          <circle cx="95" cy="110" r="12" fill="#facc15" stroke="#854d0e" strokeWidth="3" />
-          <circle cx="123" cy="126" r="10" fill="#38bdf8" stroke="#075985" strokeWidth="3" />
-        </svg>
+        {svg}
       </div>
       <p className="mt-2 text-sm font-semibold text-slate-900">
         WebGL 無法使用，改以靜態小豬呈現。
@@ -204,12 +215,41 @@ function buildStarShapePoints(THREE, outerR, innerR) {
   return points;
 }
 
-export default function PiggyBank3D({ members = [] }) {
+export default function PiggyBank3D({
+  members = [],
+  weatherCode = undefined,
+  size = 'full',
+  // 特殊Token(隱藏摩擦豬公彩蛋)相關props，全部給預設值，
+  // 不影響任何既有沒有傳這幾個prop的呼叫端(Stats.jsx的compact版本完全不受影響)。
+  rubEnabled = false,
+  onRubProgress = undefined,
+  onSpecialTokenSummon = undefined,
+  resetRubToken = 0,
+}) {
   const hostRef = useRef(null);
   const [reducedMotion, setReducedMotion] = useState(prefersReducedMotion);
   const [renderFailed, setRenderFailed] = useState(false);
   const [backgroundPhotoUrl] = useState(() => getDailyBackgroundPhotoUrl());
   const sample = useMemo(() => samplePiggyTokens(members), [members]);
+  // 用ref保存目前最新的callback/開關值，讓下面那個大的Three.js useEffect(只在
+  // [reducedMotion, sample.tokens]變動時重新執行)裡面設定的事件監聽器，
+  // 永遠呼叫到「最新一次render傳進來的」版本，不會抓到掛載當下就凍結住的舊closure。
+  const rubTrackerRef = useRef(null);
+  if (!rubTrackerRef.current) {
+    rubTrackerRef.current = createRubTracker();
+  }
+  const rubEnabledRef = useRef(rubEnabled);
+  const onRubProgressRef = useRef(onRubProgress);
+  const onSpecialTokenSummonRef = useRef(onSpecialTokenSummon);
+  useEffect(() => {
+    rubEnabledRef.current = rubEnabled;
+    onRubProgressRef.current = onRubProgress;
+    onSpecialTokenSummonRef.current = onSpecialTokenSummon;
+  });
+  // 流程結束(成功/取消/過期)後，父層把resetRubToken遞增一次，讓下一次摩擦重新可用。
+  useEffect(() => {
+    rubTrackerRef.current?.reset();
+  }, [resetRubToken]);
 
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') {
@@ -506,11 +546,79 @@ export default function PiggyBank3D({ members = [] }) {
 
         let dragging = false;
         let pointerX = 0;
+        let pointerY = 0;
         let angularVelocity = 0.00016;
+
+        // ---- 特殊Token(隱藏摩擦豬公彩蛋)：召喚動畫 ----
+        // spec section 7/33：變粉紅+降低透明度 -> 快速旋轉(reduced motion時改成
+        // 脈動+淡入淡出，不做3D快速旋轉) -> 動畫結束才通知父層開Modal。
+        // 材質的「原始值」在這裡先存一份，動畫結束後準確復原，不是憑印象猜一個顏色。
+        const outerGlassOriginalColor = outerGlass.color.clone();
+        const outerGlassOriginalOpacity = outerGlass.opacity;
+        const innerCoreOriginalColor = innerCore.color.clone();
+        const innerCoreOriginalOpacity = innerCore.opacity;
+        const summonTintColor = new THREE.Color(0xff2f87);
+        let summonAnimationPlaying = false;
+
+        function playSpecialTokenSummonAnimation() {
+          if (summonAnimationPlaying) {
+            return;
+          }
+          summonAnimationPlaying = true;
+          dragging = false;
+          const startRotationY = pig.rotation.y;
+          const totalRotation = reducedMotion ? 0 : Math.PI * 2 * 2.5; // 720~1080度之間，取900度
+          const duration = SPECIAL_TOKEN_SPIN_DURATION_MS;
+          const start = performance.now();
+
+          const step = (now) => {
+            if (disposed) {
+              return;
+            }
+            const progress = Math.min(1, (now - start) / duration);
+            const eased = 1 - ((1 - progress) ** 2);
+
+            if (reducedMotion) {
+              // spec 37：不做快速3D旋轉，改成粉紅光暈+縮放脈動+淡入淡出，
+              // 幅度小、時間仍維持約1秒，避免對動暈敏感的使用者不適。
+              const pulse = 1 + Math.sin(progress * Math.PI * 3) * 0.03;
+              pig.scale.setScalar(1.15 * pulse);
+            } else {
+              pig.rotation.y = startRotationY + totalRotation * eased;
+            }
+
+            const tintAmount = progress < 0.85 ? Math.min(1, progress / 0.15) : Math.max(0, (1 - progress) / 0.15);
+            outerGlass.color.copy(outerGlassOriginalColor).lerp(summonTintColor, tintAmount * 0.85);
+            innerCore.color.copy(innerCoreOriginalColor).lerp(summonTintColor, tintAmount * 0.85);
+            outerGlass.opacity = outerGlassOriginalOpacity - tintAmount * 0.35;
+            innerCore.opacity = innerCoreOriginalOpacity - tintAmount * 0.25;
+
+            render();
+
+            if (progress < 1) {
+              window.requestAnimationFrame(step);
+            } else {
+              pig.scale.setScalar(1.15);
+              outerGlass.color.copy(outerGlassOriginalColor);
+              innerCore.color.copy(innerCoreOriginalColor);
+              outerGlass.opacity = outerGlassOriginalOpacity;
+              innerCore.opacity = innerCoreOriginalOpacity;
+              render();
+              summonAnimationPlaying = false;
+              onSpecialTokenSummonRef.current?.();
+            }
+          };
+          window.requestAnimationFrame(step);
+        }
+
         const handlePointerDown = (event) => {
           dragging = true;
           pointerX = event.clientX;
+          pointerY = event.clientY;
           renderer.domElement.setPointerCapture?.(event.pointerId);
+          if (rubEnabledRef.current && !summonAnimationPlaying) {
+            rubTrackerRef.current.onStart(performance.now());
+          }
         };
         const handlePointerMove = (event) => {
           if (!dragging) {
@@ -518,14 +626,28 @@ export default function PiggyBank3D({ members = [] }) {
           }
 
           const deltaX = event.clientX - pointerX;
+          const deltaY = event.clientY - pointerY;
           pointerX = event.clientX;
+          pointerY = event.clientY;
           pig.rotation.y += deltaX * 0.012;
           angularVelocity = deltaX * 0.012;
           render();
+
+          if (rubEnabledRef.current && !summonAnimationPlaying) {
+            const result = rubTrackerRef.current.onMove(performance.now(), deltaX, deltaY);
+            onRubProgressRef.current?.(result.progress);
+            if (result.triggered) {
+              playSpecialTokenSummonAnimation();
+            }
+          }
         };
         const handlePointerUp = (event) => {
           dragging = false;
           renderer.domElement.releasePointerCapture?.(event.pointerId);
+          if (rubEnabledRef.current && !summonAnimationPlaying) {
+            rubTrackerRef.current.onEnd();
+            onRubProgressRef.current?.(0);
+          }
         };
 
         renderer.domElement.addEventListener('pointerdown', handlePointerDown);
@@ -556,7 +678,7 @@ export default function PiggyBank3D({ members = [] }) {
 
             const delta = Math.min(40, time - previousTime);
             previousTime = time;
-            if (!dragging) {
+            if (!dragging && !summonAnimationPlaying) {
               pig.rotation.y += angularVelocity;
               angularVelocity *= 0.95;
               if (Math.abs(angularVelocity) < 0.00012) angularVelocity = 0.00016;
@@ -596,30 +718,55 @@ export default function PiggyBank3D({ members = [] }) {
   const visualSummary = sample.totalCount > sample.renderedCount
     ? `以 ${sample.renderedCount} 個代表物件呈現，共 ${sample.totalCount} Token`
     : `共 ${sample.totalCount} Token`;
+  const isCompact = size === 'compact';
+  const isTransparent = size === 'transparent';
+  const hostSizeClassName = isCompact ? 'relative h-16 w-16' : 'relative h-72 w-full';
+  const figureClassName = isCompact
+    ? 'relative inline-flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/40 bg-gradient-to-br from-rose-200/40 to-white/10'
+    : isTransparent
+      // 'transparent'：首頁滿版背景設計用——照片/天氣特效已經由Home.jsx在頁面層級處理，
+      // 這裡完全不再自己畫背景/邊框，讓畫布直接透出底下頁面的固定背景照片。
+      ? 'relative'
+      : 'relative overflow-hidden rounded-[1.75rem] border border-white/15 bg-gradient-to-br from-rose-300/20 to-white/5';
 
   return (
-    <figure className="relative overflow-hidden rounded-[1.75rem] border border-white/15 bg-gradient-to-br from-rose-300/20 to-white/5">
-      <div className="absolute left-4 top-4 z-10 rounded-full bg-slate-950/80 px-3 py-1 text-xs font-semibold text-white">
-        {visualSummary}
-      </div>
+    <figure className={figureClassName}>
+      {!isCompact && !isTransparent && (
+        <div className="absolute left-4 top-4 z-10 rounded-full bg-slate-950/80 px-3 py-1 text-xs font-semibold text-white">
+          {visualSummary}
+        </div>
+      )}
       {renderFailed ? (
         <StaticPig
           totalCount={sample.totalCount}
           renderedCount={sample.renderedCount}
           reducedMotion={reducedMotion}
+          compact={isCompact}
         />
       ) : (
         <>
-          {/* eslint-disable-next-line jsx-a11y/alt-text */}
-          <img
-            src={backgroundPhotoUrl}
-            alt=""
-            aria-hidden="true"
-            className="absolute inset-0 h-full w-full object-cover blur-[2px] scale-105"
-          />
+          {!isCompact && !isTransparent && (
+            <>
+              {/* eslint-disable-next-line jsx-a11y/alt-text */}
+              <img
+                src={backgroundPhotoUrl}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 h-full w-full object-cover blur-[2px] scale-105"
+                style={{ objectFit: 'cover', objectPosition: 'center' }}
+              />
+              {/* 天氣特效疊在背景照片「之上」、3D畫布「之下」：畫布本身透明，
+                  沒有豬公擋住的地方會同時透出照片+天氣特效，豬公不透明的地方蓋在最上層。
+                  縮小版(compact，例如統計頁摘要卡裡的迷你豬公)故意不做背景照片跟天氣特效，
+                  這麼小的尺寸放這些反而只會模糊一片，看不出細節。
+                  透明版(transparent，首頁滿版背景)也不做，因為Home.jsx頁面層級
+                  已經有自己的固定背景照片+天氣特效，這裡重複畫一次反而會蓋住頁面的版本。 */}
+              <WeatherBackground weatherCode={weatherCode} />
+            </>
+          )}
           <div
             ref={hostRef}
-            className="relative h-72 w-full"
+            className={hostSizeClassName}
             role="img"
             aria-label={`可水平拖曳旋轉的小豬撲滿，內含 ${sample.totalCount} Token`}
           />

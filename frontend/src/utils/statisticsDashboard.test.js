@@ -371,3 +371,117 @@ describe('buildGroupStatisticsDashboard - includes everyone, not just the curren
     expect(() => buildGroupStatisticsDashboard({ reports: undefined, members: undefined, referenceDate: REFERENCE })).not.toThrow();
   });
 });
+
+// 特殊Token(隱藏摩擦豬公彩蛋)：spec section 14/41要求所有統計用SUM(tokenValue)，
+// 不是COUNT(report筆數)——一顆特殊Token(displayTokenCount=1)要讓summary/每日趨勢/
+// 原因分布/成員貢獻都看到+5，而不是跟一般Token一樣只+1。
+function makeSpecialReport(id, targetId, reason, dateArgs) {
+  return {
+    id,
+    targetId,
+    reporterId: 'someone-else',
+    reason,
+    timestamp: new Date(...dateArgs),
+    tokenType: 'SPECIAL_5X',
+    displayTokenCount: 1,
+    tokenValue: 5,
+    source: 'PIG_RUB_EASTER_EGG',
+  };
+}
+
+describe('buildStatisticsDashboard - 特殊Token以tokenValue計算，不是COUNT筆數', () => {
+  it('summary.currentTokenCount把特殊Token算成5，不是1', () => {
+    const reports = [
+      makeReport('r1', 'me', '討論會議', [2024, 4, 21, 12, 15]),
+      makeSpecialReport('r2', 'me', '討論會議', [2024, 4, 21, 12, 30]),
+    ];
+
+    const dashboard = buildStatisticsDashboard({
+      reports,
+      currentMemberId: 'me',
+      periodType: 'week',
+      referenceDate: REFERENCE,
+    });
+
+    // 1(一般) + 5(特殊) = 6，不是2(COUNT兩筆)
+    expect(dashboard.summary.currentTokenCount).toBe(6);
+  });
+
+  it('dailyTrend當天的tokenCount把特殊Token算成5', () => {
+    const reports = [makeSpecialReport('r1', 'me', '討論會議', [2024, 4, 21, 12, 15])];
+
+    const dashboard = buildStatisticsDashboard({
+      reports,
+      currentMemberId: 'me',
+      periodType: 'week',
+      referenceDate: REFERENCE,
+    });
+
+    const tuesday = dashboard.dailyTrend.find((day) => day.date === '2024-05-21');
+    expect(tuesday.tokenCount).toBe(5);
+  });
+
+  it('reasonDistribution的tokenCount把特殊Token算成5，但eventCount仍是1筆事件', () => {
+    const reports = [makeSpecialReport('r1', 'me', '討論會議', [2024, 4, 21, 12, 15])];
+
+    const dashboard = buildStatisticsDashboard({
+      reports,
+      currentMemberId: 'me',
+      periodType: 'week',
+      referenceDate: REFERENCE,
+    });
+
+    const meetingRow = dashboard.reasonDistribution.find((row) => row.reasonId === 'meeting_schedule');
+    expect(meetingRow.tokenCount).toBe(5);
+    expect(meetingRow.eventCount).toBe(1);
+    expect(meetingRow.averagePerEvent).toBe(5);
+  });
+
+  it('lunchTimeHeatmap的格子把特殊Token算成5', () => {
+    // 12:10午餐時段第一格(12:00-12:30)，星期二
+    const reports = [makeSpecialReport('r1', 'me', '討論會議', [2024, 4, 21, 12, 10])];
+
+    const dashboard = buildStatisticsDashboard({
+      reports,
+      currentMemberId: 'me',
+      periodType: 'week',
+      referenceDate: REFERENCE,
+    });
+
+    const cell = dashboard.lunchTimeHeatmap.find(
+      (item) => item.timeSlot === LUNCH_TIME_SLOTS[0] && item.dayLabel === '二',
+    );
+    expect(cell.tokenCount).toBe(5);
+  });
+
+  it('舊資料(沒有tokenValue欄位)完全不受影響，還是照樣算1', () => {
+    const legacyReport = { id: 'legacy', targetId: 'me', reporterId: 'x', reason: '討論會議', timestamp: new Date(2024, 4, 21, 12, 15) };
+    const dashboard = buildStatisticsDashboard({
+      reports: [legacyReport],
+      currentMemberId: 'me',
+      periodType: 'week',
+      referenceDate: REFERENCE,
+    });
+    expect(dashboard.summary.currentTokenCount).toBe(1);
+  });
+});
+
+describe('buildGroupStatisticsDashboard - 成員貢獻排名把特殊Token算成5', () => {
+  it('memberContributions.tokenCount反映SUM(tokenValue)', () => {
+    const reports = [
+      makeReport('r1', 'huye', '討論會議', [2024, 4, 21, 12, 15]),
+      makeSpecialReport('r2', 'huye', '討論會議', [2024, 4, 21, 12, 30]),
+    ];
+
+    const dashboard = buildGroupStatisticsDashboard({
+      reports,
+      members: [{ id: 'huye', name: '虎爺' }],
+      periodType: 'week',
+      referenceDate: REFERENCE,
+    });
+
+    const huye = dashboard.memberContributions.find((row) => row.memberId === 'huye');
+    expect(huye.tokenCount).toBe(6);
+    expect(dashboard.summary.currentTokenCount).toBe(6);
+  });
+});

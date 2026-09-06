@@ -5,6 +5,7 @@
 :root {
   /* 每日主題色的CSS變數，這裡的值是還沒套用JS計算前的預設(等同目前的玫瑰粉主題)，
      避免變數還沒被useDailyTheme() 設定前，畫面出現無色/黑白的閃爍。 */
+  --brand-bg: #fff7f8;
   --brand-50: #fff1f2;
   --brand-500: #f43f5e;
   --brand-600: #e11d48;
@@ -307,5 +308,25 @@ body {
 
   .weather-fx-lightning {
     display: none;
+  }
+}
+
+/* 特殊Token(隱藏摩擦豬公彩蛋)：spec 11.2「投入動畫」——出現、小幅浮動、
+   縮小、投入。跟weather-fx系列動畫用同一套「尊重reduce-motion」的規則，
+   減少動態時只保留最後的靜止狀態，不做位移/縮放的動畫。 */
+@keyframes special-token-drop {
+  0% { transform: translateY(-24px) scale(1.08); opacity: 0.85; }
+  55% { transform: translateY(0) scale(1); opacity: 1; }
+  75% { transform: translateY(6px) scale(0.94); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+.special-token-drop {
+  animation: special-token-drop 1.1s ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .special-token-drop {
+    animation: none !important;
   }
 }
