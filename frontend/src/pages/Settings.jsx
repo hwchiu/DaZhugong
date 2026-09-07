@@ -10,14 +10,6 @@ import { formatCooldownRemaining, getCooldownStatus } from '../utils/cooldown.js
 const SAFE_LOAD_ERROR_MESSAGE = '目前無法載入設定，請稍後再試。';
 const SAFE_LOGOUT_ERROR_MESSAGE = '目前無法登出，請稍後再試。';
 
-// 豁免成員：不參與登入、不計入「進行中成員」名單，純粹只是要在設定頁露出這個人。
-// 這裡是寫死的靜態清單，不是從Firestore members collection來的，所以沒有id、
-// 也沒有totalTokens這種跟Token系統綁在一起的欄位可以顯示。
-// Emily已經有角色卡照片(見 data/memberAvatars.js 的 MEMBER_AVATAR_PROFILES)，
-// 點她的列可以跟其他成員一樣看完整角色卡。之後若再新增豁免成員但還沒拿到照片，
-// MemberAvatar會自動顯示原本的emoji樣式頭像，該筆也不會出現「查看角色卡」的按鈕。
-const EXEMPT_MEMBERS = [{ name: 'Emily' }];
-
 function getMemberName(member) {
   return member?.name ?? member?.displayName ?? '未命名成員';
 }
@@ -208,46 +200,6 @@ export default function Settings() {
               ) : (
                 <p className="mt-4 rounded-2xl bg-slate-50 px-4 py-5 text-sm font-semibold text-slate-700">目前沒有進行中成員。</p>
               )}
-            </section>
-
-            <section className="rounded-[2rem] bg-white p-5 shadow-lg shadow-rose-100">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-lg font-bold text-slate-950">豁免成員</h2>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-800">{EXEMPT_MEMBERS.length} 人</span>
-              </div>
-              <p className="mt-1 text-sm leading-6 text-slate-700">不參與登入、不計入違規統計，僅在此列出。</p>
-              <ul aria-label="豁免成員" className="mt-4 space-y-3">
-                {EXEMPT_MEMBERS.map((member) => {
-                  const profile = getMemberAvatarProfile(member.name);
-                  const rowContent = (
-                    <>
-                      <MemberAvatar member={member} size="sm" />
-                      <span className="min-w-0 flex-1 truncate text-left font-bold text-slate-950">{member.name}</span>
-                    </>
-                  );
-
-                  if (profile) {
-                    return (
-                      <li key={member.name}>
-                        <button
-                          type="button"
-                          onClick={() => setCardMember(member)}
-                          aria-label={`查看${member.name}的角色卡`}
-                          className="flex w-full items-center gap-3 rounded-[1.5rem] border border-slate-200 px-4 py-3 text-left transition hover:border-rose-300 hover:bg-rose-50/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
-                        >
-                          {rowContent}
-                        </button>
-                      </li>
-                    );
-                  }
-
-                  return (
-                    <li key={member.name} className="flex items-center gap-3 rounded-[1.5rem] border border-slate-200 px-4 py-3">
-                      {rowContent}
-                    </li>
-                  );
-                })}
-              </ul>
             </section>
 
             {inactiveMembers.length ? (

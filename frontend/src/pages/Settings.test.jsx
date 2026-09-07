@@ -153,28 +153,10 @@ describe('Settings page', () => {
     expect(within(accountSection).getByRole('img', { name: '房產大亨' })).toBeTruthy();
   });
 
-  it('always shows the exempt members section (豁免成員), independent of Firestore members, with a clickable character card', async () => {
-    const user = userEvent.setup();
+  it('does not show an obsolete exempt Emily entry after she becomes a real member', () => {
     render(<Settings />);
 
-    const exemptSection = screen.getByRole('heading', { name: '豁免成員' }).closest('section');
-    const list = within(exemptSection).getByRole('list', { name: '豁免成員' });
-    const items = within(list).getAllByRole('listitem');
-
-    expect(items).toHaveLength(1);
-    expect(items[0].textContent).toContain('Emily');
-    expect(within(exemptSection).getByText('1 人')).toBeTruthy();
-
-    // Emily已經有角色卡照片，點她的列一樣要能看到完整角色卡(跟其他成員一致)。
-    const emilyButton = within(exemptSection).getByRole('button', { name: '查看Emily的角色卡' });
-    await user.click(emilyButton);
-
-    const dialog = screen.getByRole('dialog', { name: 'Emily 角色卡' });
-    expect(dialog.textContent).toContain('Emily・Emily');
-    expect(dialog.querySelector('img')).toBeTruthy();
-
-    await user.click(screen.getByRole('button', { name: '關閉' }));
-    expect(screen.queryByRole('dialog')).toBe(null);
+    expect(screen.queryByRole('heading', { name: '豁免成員' })).toBe(null);
   });
 
   describe('member cooldown badge', () => {
