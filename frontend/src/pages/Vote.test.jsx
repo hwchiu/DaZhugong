@@ -99,7 +99,7 @@ describe('Vote page', () => {
     expect(screen.getByRole('status').textContent).toContain('載入可投票成員');
   });
 
-  it('renders only active non-self members and derives totals from report documents', () => {
+  it('renders active non-self members as selectable, plus a disabled self card, deriving totals from report documents', () => {
     useGroupMock.mockReturnValue({
       members: [
         { id: 'self', name: '自己', active: true, totalTokens: 22 },
@@ -122,13 +122,39 @@ describe('Vote page', () => {
 
     renderVote();
 
-    expect(screen.queryByRole('button', { name: /自己/ })).toBe(null);
+    // 自己會出現在格線裡(方便查看冷卻時間)，但一律是disabled、不能被選取；
+    // 停用(inactive)的成員則完全不出現在格線裡，這兩者是不同的原因、
+    // 不應該混在一起用同一種「找不到」的斷言去驗證。
+    const selfButton = screen.getByRole('button', { name: /自己/ });
+    expect(selfButton.disabled).toBe(true);
     expect(screen.queryByRole('button', { name: /小美/ })).toBe(null);
     expect(screen.getByRole('button', { name: /小華/ })).toBeTruthy();
     expect(screen.getByRole('button', { name: /阿明/ })).toBeTruthy();
     expect(screen.getByText('已確認 2 票')).toBeTruthy();
     expect(screen.getByText('已確認 1 票')).toBeTruthy();
     expect(screen.queryByText('已確認 99 票')).toBe(null);
+  });
+
+  it("clicking the self card does nothing: it never becomes the selected target, even though it's rendered for cooldown visibility", async () => {
+    const user = userEvent.setup();
+    useGroupMock.mockReturnValue({
+      members: [
+        { id: 'self', name: '自己', active: true },
+        { id: 'active-1', name: '小華', active: true, avatar: 'cat' },
+      ],
+      loading: false,
+      error: null,
+    });
+
+    renderVote();
+
+    const selfButton = screen.getByRole('button', { name: /自己/ });
+    await user.click(selfButton);
+
+    // disabled按鈕本身瀏覽器就不會觸發click，這裡是確認就算真的觸發了，
+    // 也完全不會讓「目前選擇」變成自己、也不會生出一個「確認：自己」的按鈕。
+    expect(screen.queryByRole('button', { name: '確認：自己' })).toBe(null);
+    expect(screen.getByText('請先選擇一位成員')).toBeTruthy();
   });
 
   it('uses the full report subscription so 101+ confirmed totals stay authoritative', () => {
@@ -158,7 +184,7 @@ describe('Vote page', () => {
     expect(screen.queryByText('已確認 99 票')).toBe(null);
   });
 
-  it('shows an empty state when there are no other active members to report', () => {
+  it('shows only the self card (with cooldown info, not selectable) when there are no other active members', () => {
     useGroupMock.mockReturnValue({
       members: [
         { id: 'self', name: '自己', active: true },
@@ -170,7 +196,12 @@ describe('Vote page', () => {
 
     renderVote();
 
-    expect(screen.getByText('目前沒有其他可投票的成員。')).toBeTruthy();
+    // 自己的卡片一律會顯示(方便查看冷卻時間)，所以這裡不再是完全空白的
+    // 「目前沒有其他可投票的成員。」空狀態框，而是格線裡只有一張自己的卡片，
+    // 外加一行提示「沒有其他人可選」的文字。
+    const selfCard = screen.getByRole('button', { name: /自己（你）|自己.*無法選擇自己/ });
+    expect(selfCard.disabled).toBe(true);
+    expect(screen.getByText('目前沒有其他可投票的成員，等待其他 active 成員加入後就能在這裡選擇違規者。')).toBeTruthy();
     expect(screen.getByRole('button', { name: '請先選擇成員' }).disabled).toBe(true);
   });
 
@@ -520,6 +551,34 @@ describe('Vote page', () => {
       await user.click(niugeButton);
 
       expect(screen.queryByRole('button', { name: '確認：牛哥' })).toBe(null);
+    });
+
+    // 新增：自己的冷卻時間也是用同一套getCooldownStatus算出來的，這裡驗證
+    // 「別人投給自己一票」之後，自己的卡片一樣會顯示冷卻倒數——這正是這個功能
+    // 存在的目的(讓使用者能在投票頁上看到自己的冷卻時間)，不是只顯示靜態的
+    // 「已確認N票」。
+    it("shows the current user's own cooldown countdown when someone has voted against them", () => {
+      useGroupMock.mockReturnValue({
+        members: [
+          { id: 'self', name: '自己', active: true },
+          { id: 'niuge', name: '牛哥', active: true },
+        ],
+        loading: false,
+        error: null,
+      });
+      useTokensMock.mockReturnValue({
+        tokens: [{ id: 't1', targetId: 'self', timestamp: new Date(2024, 4, 22, 12, 29, 0) }],
+        loading: false,
+        error: null,
+      });
+
+      renderVote();
+
+      const selfButton = screen.getByRole('button', { name: /自己.*冷卻中還剩 4:00/ });
+      expect(selfButton.disabled).toBe(true);
+      expect(screen.getByText('冷卻中 4:00')).toBeTruthy();
+      // 牛哥自己沒被投票，不該受自己冷卻狀態影響，仍然可以被選取。
+      expect(screen.getByRole('button', { name: /牛哥/ }).disabled).toBe(false);
     });
   });
 });

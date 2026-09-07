@@ -1,9 +1,9 @@
 import { NavLink } from 'react-router-dom';
-import homePigIcon from '../assets/lego-icons/home_pig.png';
+import homePigIcon from '../assets/lego-icons/home_pig_icon_only.png';
 import historyIcon from '../assets/lego-icons/history.png';
 import settingsIcon from '../assets/lego-icons/settings_bottom.png';
 import statsIcon from '../assets/lego-icons/stats.png';
-import voteBoxIcon from '../assets/lego-icons/vote_box.png';
+import tokenBadgeIcon from '../assets/lego-icons/token_badge.png';
 
 // 投票是中間的浮動主要按鈕(FAB)，不跟其他4個放在同一個TABS陣列裡處理，
 // 因為它的視覺(圓形、往上突出、漸層底色)跟其他純圖片圖示的分頁完全不同。
@@ -60,7 +60,7 @@ export default function BottomNav() {
                     isActive ? 'scale-105' : ''
                   }`}
                 >
-                  <img src={voteBoxIcon} alt="" aria-hidden="true" className="h-9 w-9 object-contain" />
+                  <img src={tokenBadgeIcon} alt="" aria-hidden="true" className="h-9 w-9 object-contain" />
                 </span>
                 <span className={`mt-1 text-xs font-medium ${isActive ? 'text-brand' : 'text-slate-600'}`}>投票</span>
               </>

@@ -312,10 +312,24 @@ service cloud.firestore {
         && request.auth.uid == get(memberPath(groupId, resource.data.targetId)).data.authUid;
     }
 
+    // 申訴需要幾人確認才會刪除紀錄——跟前端tokenService.js的
+    // APPEAL_CONFIRMATIONS_REQUIRED常數保持同一個數字(3)。規則語言沒辦法跨檔案
+    // 共用常數，所以只在這個檔案裡把魔術數字集中成一個函式，validAppealConfirmUpdate
+    // 與validAppealDelete都呼叫這裡，不要各自寫死3。
+    function appealConfirmationsRequired() {
+      return 3;
+    }
+
     // 確認申訴：陣列只能一次增加剛好一筆，而且新增的那個人必須是「目前送出這個請求的
     // 已登入成員」本人(不能幫別人蓋確認)、不能是這筆紀錄的當事人(不能自己確認自己的申訴)、
     // 也不能是已經確認過的人(不能重複確認衝票數)。用陣列切片比對「除了最後一個新加的
     // 元素之外，前面都跟原本一樣」，確保不是整個陣列被任意替換掉。
+    //
+    // before.size() < appealConfirmationsRequired()這一條(2026-09-07新增)：一旦文件
+    // 已經達到門檻人數，只能走delete、不能再繼續update疊加確認人數——搭配
+    // tokenService.js把「新增確認」跟「達標後刪除」拆成兩次分開送出的Firestore寫入
+    // (見該檔案confirmAppeal的說明)，這裡確保就算兩個人的確認請求幾乎同時抵達、
+    // 也不會有第4筆確認被塞進一份「其實已經該被刪除」的文件裡。
     function validAppealConfirmUpdate(groupId, tokenId) {
       let before = resource.data.appealConfirmedBy;
       let after = request.resource.data.appealConfirmedBy;
@@ -325,6 +339,7 @@ service cloud.firestore {
         && reportIdentityUnchangedOnAppealUpdate()
         && request.resource.data.appealedAt == resource.data.appealedAt
         && request.resource.data.keys() == resource.data.keys()
+        && before.size() < appealConfirmationsRequired()
         && after.size() == before.size() + 1
         // 注意：故意不用陣列切片(after[0:before.size()])比對前綴，因為當before
         // 為空陣列時，Firestore模擬器的空切片(start==end==0)會觸發模擬器本身的
@@ -339,12 +354,21 @@ service cloud.firestore {
         && request.auth.uid == get(memberPath(groupId, newMemberId)).data.authUid;
     }
 
-    // 刪除：只有在「這筆紀錄已經有APPEAL_CONFIRMATIONS_REQUIRED(3)人以上確認申訴」的
+    // 刪除：只有在「這筆紀錄已經有appealConfirmationsRequired()人以上確認申訴」的
     // 狀態下才允許刪除——用resource.data(刪除前、已經存在的文件狀態)檢查，
     // 不是用request.resource(刪除沒有這個東西)，確保不是隨便就能刪掉一筆紀錄。
+    //
+    // 這條規則能通過的前提是：湊滿門檻人數的那一筆確認，必須先透過
+    // validAppealConfirmUpdate「真的commit」到文件裡，delete才會在下一次、
+    // 獨立送出的Firestore寫入裡看到resource.data.appealConfirmedBy.size()達標
+    // ——這正是tokenService.js把confirmAppeal拆成兩個階段(Phase 1 update、
+    // Phase 2 delete)的原因，也是這次修正的bug（第3次確認一律permission-denied）
+    // 的根本解法。同一個transaction裡先update再delete「不會」讓這裡通過，
+    // 因為resource.data在單一transaction內看到的一律是transaction開始前、
+    // 伺服器上已經commit的狀態，不會反映同一個transaction裡稍早的寫入。
     function validAppealDelete(groupId, tokenId) {
       return resource.data.keys().hasAll(['appealConfirmedBy'])
-        && resource.data.appealConfirmedBy.size() >= 3;
+        && resource.data.appealConfirmedBy.size() >= appealConfirmationsRequired();
     }
 
     match /groups/{groupId} {

@@ -330,3 +330,51 @@ body {
     animation: none !important;
   }
 }
+
+/* ---------- 投票頁冷卻中成員卡片：英雄聯盟風格技能冷卻扇形遮罩 ---------- */
+/* 讓瀏覽器把--cooldown-remaining當成可以平滑內插的<number>(0~1)，
+   下面的animation才能畫出連續收縮的扇形，而不是離散跳動。這個屬性只給
+   CooldownSweepOverlay.jsx這個遮罩自己用，不需要被子元素繼承。 */
+@property --cooldown-remaining {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 1;
+}
+
+/* 從「整圈都是深色(剛開始冷卻)」線性收縮到「完全透明(冷卻結束)」。 */
+@keyframes cooldown-sweep {
+  from {
+    --cooldown-remaining: 1;
+  }
+  to {
+    --cooldown-remaining: 0;
+  }
+}
+
+.cooldown-sweep-mask {
+  --cooldown-remaining: 1;
+  /* 2026-09-07修正：先前這裡直接用 --cooldown-remaining*360deg 當深色扇形的
+     結束角度，deg會隨時間「遞減」(1→0)，等於邊界順著逆時針方向往回掃——
+     方向反了。conic-gradient從12點鐘方向開始，角度「遞增」的方向才是順時針，
+     所以要改成用「已經過的比例」(1 - --cooldown-remaining)——這個值會隨時間
+     從0遞增到1，邊界角度跟著遞增，才是真正的順時針。
+     算法：從0deg到「已經過比例*360deg」這一段畫成透明(代表冷卻已經過去、
+     已經"清空"的部分，從12點鐘開始順時針長大)，剩下的角度到360deg畫成深色
+     (代表還在冷卻中、尚未清空的部分)。隨著時間經過，深色扇形的邊界順時針
+     掃動、範圍跟著收縮，直到完全消失，效果等同LoL技能冷卻的收縮扇形。 */
+  background: conic-gradient(
+    transparent calc((1 - var(--cooldown-remaining)) * 360deg),
+    rgba(15, 23, 42, 0.62) calc((1 - var(--cooldown-remaining)) * 360deg)
+  );
+  animation-name: cooldown-sweep;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+/* 尊重「減少動態效果」系統設定：關掉收縮動畫，只留CooldownSweepOverlay.jsx
+   算好的靜態扇形(每秒隨計時器tick更新一次，不做平滑過場)。 */
+@media (prefers-reduced-motion: reduce) {
+  .cooldown-sweep-mask {
+    animation: none !important;
+  }
+}

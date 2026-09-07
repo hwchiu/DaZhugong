@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   runTransaction,
@@ -253,18 +254,26 @@ export async function fileAppeal({ groupId, reportId, currentMember }) {
   });
 }
 
-// 其他成員(不能是這筆紀錄的當事人)對申訴中的紀錄按下「確認」。用transaction讀取+
-// 判斷+寫入是同一個原子操作，避免「兩個人幾乎同時按確認」時，其中一次確認被覆蓋掉、
-// 或兩邊都以為自己不是第3個確認因而都沒有觸發刪除的競態問題。
-export async function confirmAppeal({ groupId, reportId, currentMember }) {
-  assertAuthenticatedMember(currentMember);
+// ---- 確認申訴：分成兩個獨立的Firestore寫入動作(重要設計決定，請勿合併回單一transaction) ----
+//
+// 背景(2026-09-07修正)：舊版把「新增這筆確認」跟「湊滿3人就刪除」放在同一個
+// transaction裡——湊滿3人時直接transaction.delete()，並不會先把第3人這筆確認
+// transaction.update()回文件。firestore.rules的validAppealDelete檢查的
+// resource.data，指的是「這次寫入之前、伺服器上已經commit的文件內容」，同一個
+// transaction裡稍早的update在evaluate這次delete的規則時並不會被看見——所以無論
+// 把update/delete兩步塞在同一個transaction裡的順序怎麼調整，delete那一刻
+// resource.data.appealConfirmedBy永遠只有2筆，validAppealDelete永遠是false，
+// 第3次確認100%會拿到permission-denied。
+//
+// 修正方式：讓「新增確認」與「達標後刪除」變成兩次分開送出、各自independently commit
+// 的Firestore寫入。Phase 2的delete送出時，Phase 1的update已經真的落地在伺服器上，
+// 這時候resource.data.appealConfirmedBy就是「已經3筆」的狀態，規則才會如預期通過。
 
-  if (!groupId || !reportId) {
-    throw new Error('A report is required.');
-  }
-
-  const reportRef = doc(db, 'groups', groupId, 'reports', reportId);
-
+// Phase 1：原子地把目前這位成員的確認加進appealConfirmedBy。
+// 沿用原本的transaction讀取+檢查+寫入，保留「兩個人幾乎同時確認」時的原子性保證
+// (不會有一次確認被覆蓋掉、或誰是第3個人的判斷跟實際寫入不同步)。
+// 這一步無論湊到幾人都只做update，絕對不在這裡做delete——delete留給Phase 2。
+async function appendAppealConfirmation({ reportRef, currentMember }) {
   return runTransaction(db, async (transaction) => {
     const snapshot = await transaction.get(reportRef);
     if (!snapshot.exists()) {
@@ -283,14 +292,48 @@ export async function confirmAppeal({ groupId, reportId, currentMember }) {
     if (confirmedBy.includes(currentMember.id)) {
       throw new Error('This member has already confirmed the appeal.');
     }
-
-    const nextConfirmedBy = [...confirmedBy, currentMember.id];
-    if (nextConfirmedBy.length >= APPEAL_CONFIRMATIONS_REQUIRED) {
-      transaction.delete(reportRef);
-      return { deleted: true, confirmedBy: nextConfirmedBy };
+    // 正常流程下，一旦湊滿APPEAL_CONFIRMATIONS_REQUIRED人，Phase 2會緊接著把
+    // 文件刪除，所以「文件還存在、但已經有>=3筆確認」理論上只會是極短暫的過渡狀態
+    // (例如Phase 2那次網路請求剛好失敗)。這裡明確擋下來、給一個講得清楚的錯誤，
+    // 呼應firestore.rules那邊同樣新增的size() < APPEAL_CONFIRMATIONS_REQUIRED防線，
+    // 避免無限疊加確認人數，也避免行為跟規則兩邊各說各話。
+    if (confirmedBy.length >= APPEAL_CONFIRMATIONS_REQUIRED) {
+      throw new Error('This appeal has already reached the required confirmations.');
     }
 
+    const nextConfirmedBy = [...confirmedBy, currentMember.id];
     transaction.update(reportRef, { appealConfirmedBy: nextConfirmedBy });
-    return { deleted: false, confirmedBy: nextConfirmedBy };
+    return nextConfirmedBy;
   });
+}
+
+// Phase 2：Phase 1已經確定commit之後，才視情況發出一次獨立的刪除請求。
+// 用一般的deleteDoc()而不是transaction——這裡本來就不需要transaction的原子性
+// (該加的那一筆確認在Phase 1已經確定寫入)，重點只是要讓這次delete是一個
+// 全新的、resource.data會反映Phase 1最新結果的Firestore寫入。
+// 如果文件在這之間已經被幾乎同時湊滿3人的另一位confirmer刪除了，deleteDoc()
+// 對已經不存在的文件是Firestore的正常行為、不會丟錯，這裡視為「申訴已經解決」，
+// 不需要特別處理成錯誤。
+async function resolveAppealIfThresholdReached({ reportRef, confirmedBy }) {
+  if (confirmedBy.length < APPEAL_CONFIRMATIONS_REQUIRED) {
+    return false;
+  }
+
+  await deleteDoc(reportRef);
+  return true;
+}
+
+// 其他成員(不能是這筆紀錄的當事人)對申訴中的紀錄按下「確認」。
+export async function confirmAppeal({ groupId, reportId, currentMember }) {
+  assertAuthenticatedMember(currentMember);
+
+  if (!groupId || !reportId) {
+    throw new Error('A report is required.');
+  }
+
+  const reportRef = doc(db, 'groups', groupId, 'reports', reportId);
+  const confirmedBy = await appendAppealConfirmation({ reportRef, currentMember });
+  const deleted = await resolveAppealIfThresholdReached({ reportRef, confirmedBy });
+
+  return { deleted, confirmedBy };
 }

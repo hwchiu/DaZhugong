@@ -88,8 +88,16 @@ test('rules support the appeal flow: only the record owner can file, only 3+ con
     /validAppealConfirmUpdate[\s\S]*?isMember\(groupId, newMemberId\)/,
   );
 
-  // 刪除門檻：這個數字如果被改掉(例如改成1)，就代表門檻被降低了。
-  assert.match(rules, /resource\.data\.appealConfirmedBy\.size\(\) >= 3/);
+  // 刪除門檻：appealConfirmationsRequired()回傳的數字如果被改掉(例如改成1)，
+  // 就代表門檻被降低了。門檻集中定義在這個函式裡，validAppealDelete跟
+  // validAppealConfirmUpdate都必須呼叫它，不能各自寫死數字。
+  assert.match(rules, /function appealConfirmationsRequired\(\)\s*\{\s*return 3;\s*\}/);
+  assert.match(rules, /resource\.data\.appealConfirmedBy\.size\(\) >= appealConfirmationsRequired\(\)/);
+
+  // 回歸測試(2026-09-07)：修正「第3次確認一律permission-denied」的bug時，額外
+  // 加上這條防線——文件一旦已經達到門檻人數，就不能再透過update疊加更多確認，
+  // 只能走delete。如果這條件被拿掉，代表這次的修正被還原了。
+  assert.match(rules, /before\.size\(\) < appealConfirmationsRequired\(\)/);
 });
 
 test('rules support the special token (pig-rub easter egg): server-fixed tokenValue and create-only daily-limit marker', () => {

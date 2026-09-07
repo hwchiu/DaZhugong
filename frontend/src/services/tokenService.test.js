@@ -17,6 +17,10 @@ const firestoreMock = vi.hoisted(() => ({
     }
     return { kind: 'doc', db: first, path: rest };
   }),
+  // confirmAppeal的Phase 2(達標後刪除)是獨立於transaction之外的一般deleteDoc()
+  // 呼叫，見tokenService.js confirmAppeal的說明——這裡跟mockTransaction.delete
+  // 分開追蹤，才能驗證「delete真的是在Phase 1的update之後、另一次獨立呼叫」。
+  deleteDoc: vi.fn(),
   getDoc: vi.fn(),
   serverTimestamp: vi.fn(() => ({ kind: 'server-timestamp' })),
   updateDoc: vi.fn(),
@@ -554,10 +558,18 @@ describe('confirmAppeal', () => {
       { appealConfirmedBy: ['member-a', currentMember.id] },
     );
     expect(firestoreMock.mockTransaction.delete).not.toHaveBeenCalled();
+    // Phase 2(獨立的deleteDoc)在未達門檻時完全不應該被觸發。
+    expect(firestoreMock.deleteDoc).not.toHaveBeenCalled();
     expect(result).toEqual({ deleted: false, confirmedBy: ['member-a', currentMember.id] });
   });
 
-  it('deletes the record once the 3rd confirmation is reached (AC: 3+ confirmations removes the record)', async () => {
+  // 這個測試對應本次修正的bug：舊版在湊滿3人時是同一個transaction裡直接
+  // transaction.delete()，導致firestore.rules的validAppealDelete檢查
+  // resource.data時，永遠只看到commit前的2人、必定permission-denied。
+  // 修正後Phase 1一律只做update(不論湊到幾人)，Phase 2才用獨立的deleteDoc()——
+  // 這裡驗證的正是「transaction.delete從未被呼叫、真正的刪除是透過deleteDoc()」，
+  // 這正是讓resource.data能反映Phase 1最新結果的關鍵。
+  it('commits the 3rd confirmation via update, then resolves via a separate deleteDoc call (AC: 3+ confirmations removes the record)', async () => {
     firestoreMock.mockTransaction.get.mockResolvedValue({
       exists: () => true,
       data: () => ({ ...appealedReport, appealConfirmedBy: ['member-a', 'member-b'] }),
@@ -565,11 +577,36 @@ describe('confirmAppeal', () => {
 
     const result = await confirmAppeal({ groupId: 'main', reportId: 'report-1', currentMember });
 
-    expect(firestoreMock.mockTransaction.delete).toHaveBeenCalledWith(
+    // Phase 1：第3筆確認一樣要先透過transaction.update()真正commit進文件，
+    // 不能直接跳過這一步去刪除。
+    expect(firestoreMock.mockTransaction.update).toHaveBeenCalledWith(
+      expect.objectContaining({ path: ['groups', 'main', 'reports', 'report-1'] }),
+      { appealConfirmedBy: ['member-a', 'member-b', currentMember.id] },
+    );
+    expect(firestoreMock.mockTransaction.delete).not.toHaveBeenCalled();
+
+    // Phase 2：達標後才用一次獨立的deleteDoc()，而不是在同一個transaction裡。
+    expect(firestoreMock.deleteDoc).toHaveBeenCalledWith(
       expect.objectContaining({ path: ['groups', 'main', 'reports', 'report-1'] }),
     );
+    expect(result).toEqual({ deleted: true, confirmedBy: ['member-a', 'member-b', currentMember.id] });
+  });
+
+  it('rejects appending once the appeal has already reached the required confirmations', async () => {
+    firestoreMock.mockTransaction.get.mockResolvedValue({
+      exists: () => true,
+      data: () => ({ ...appealedReport, appealConfirmedBy: ['member-a', 'member-b', 'member-c'] }),
+    });
+
+    await expect(confirmAppeal({
+      groupId: 'main',
+      reportId: 'report-1',
+      currentMember,
+    })).rejects.toThrow(/already reached the required confirmations/i);
+
     expect(firestoreMock.mockTransaction.update).not.toHaveBeenCalled();
-    expect(result.deleted).toBe(true);
+    expect(firestoreMock.mockTransaction.delete).not.toHaveBeenCalled();
+    expect(firestoreMock.deleteDoc).not.toHaveBeenCalled();
   });
 
   it('rejects when the record no longer exists', async () => {

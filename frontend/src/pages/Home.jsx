@@ -4,23 +4,25 @@ import DateWeatherBar from '../components/DateWeatherBar.jsx';
 import LazyBoundary from '../components/LazyBoundary.jsx';
 import LiveClock from '../components/LiveClock.jsx';
 import MemberAvatar from '../components/MemberAvatar.jsx';
-import { TokenIcon } from '../components/NavIcons.jsx';
+import { TokenIcon, RefreshIcon } from '../components/NavIcons.jsx';
 import PendingBanner from '../components/PendingBanner.jsx';
 import SpecialTokenFlow from '../components/SpecialTokenFlow.jsx';
+import StockPriceBar from '../components/StockPriceBar.jsx';
 import WeatherBackground from '../components/WeatherBackground.jsx';
 import { getDailyBackgroundPhotoUrl } from '../utils/dailyBackgroundPhoto.js';
 import { hasSummonedSpecialTokenToday } from '../utils/specialToken.js';
 import { pickRandomGreeting } from '../data/greetings.js';
 import { useGroup } from '../hooks/useGroup.js';
+import { useStockPrice } from '../hooks/useStockPrice.js';
 import { useTokens } from '../hooks/useTokens.js';
 import { useWeather } from '../hooks/useWeather.js';
 import { useAuthStore } from '../store/authStore.js';
-import homePigIcon from '../assets/lego-icons/home_pig.png';
+import homePigIcon from '../assets/lego-icons/home_pig_icon_only.png';
 import voteBoxIcon from '../assets/lego-icons/vote_box.png';
 import historyIcon from '../assets/lego-icons/history.png';
 import statsIcon from '../assets/lego-icons/stats.png';
 import settingsHeaderIcon from '../assets/lego-icons/settings.png';
-import menuIcon from '../assets/lego-icons/menu.png';
+import menuIcon from '../assets/lego-icons/menu_icon_only.png';
 import infoIcon from '../assets/lego-icons/info.png';
 
 const SAFE_LOAD_ERROR_MESSAGE = '目前無法同步首頁資料，請稍後再試。';
@@ -189,6 +191,7 @@ export default function Home() {
   const [greeting] = useState(() => pickRandomGreeting());
   const [heroBackgroundPhotoUrl] = useState(() => getDailyBackgroundPhotoUrl());
   const { weather, weatherFailed } = useWeather();
+  const { quote: stockQuote, quoteFailed: stockQuoteFailed, autoRefreshStopped: stockAutoRefreshStopped } = useStockPrice();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
 
@@ -302,18 +305,25 @@ export default function Home() {
           >
             <img src={infoIcon} alt="" aria-hidden="true" className="h-7 w-7 object-contain" />
           </button>
-          <Link
-            to="/settings"
-            aria-label="設定"
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            aria-label="重新整理頁面"
             className="rounded-full bg-white/25 p-1.5 backdrop-blur-md transition hover:bg-white/35"
           >
-            <img src={settingsHeaderIcon} alt="" aria-hidden="true" className="h-7 w-7 object-contain" />
-          </Link>
+            <RefreshIcon className="h-7 w-7 text-white" />
+          </button>
         </div>
 
         <PendingBanner />
 
         <div className="flex flex-wrap items-center gap-2">
+          <StockPriceBar
+            quote={stockQuote}
+            quoteFailed={stockQuoteFailed}
+            autoRefreshStopped={stockAutoRefreshStopped}
+            glass
+          />
           <DateWeatherBar weather={weather} weatherFailed={weatherFailed} glass />
           <LiveClock glass />
         </div>

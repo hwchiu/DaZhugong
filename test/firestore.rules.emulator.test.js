@@ -590,3 +590,56 @@ test('deleting the report fails with fewer than 3 confirmations, and succeeds on
   const confirmerDb = testEnv.authenticatedContext('uid-4').firestore();
   await assertSucceeds(deleteDoc(doc(confirmerDb, 'groups/main/reports/report-1')));
 });
+
+// ---- 回歸測試(2026-09-07)：修正「第3次確認一律permission-denied」的bug ----
+// 上面那個測試用withSecurityRulesDisabled直接把文件seed成已經有3筆確認，
+// 沒有真的走過「第3個人自己送出update，把自己那筆確認寫進去」這個關鍵動作，
+// 掩蓋了舊版confirmAppeal()在同一個transaction裡「直接delete、跳過update」
+// 會撞到的permission-denied——這裡補上這個真正符合tokenService.js實際呼叫
+// 順序(Phase 1 update、Phase 2 delete，兩次獨立送出的寫入)的端對端測試。
+test('regression: the 3rd confirmer must first update via real rules before delete succeeds (mirrors tokenService.js confirmAppeal Phase 1 + Phase 2)', { skip: !shouldRun }, async () => {
+  await seedAppealFixture(testEnv);
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await updateDoc(doc(context.firestore(), 'groups/main/reports/report-1'), {
+      appealedAt: serverTimestamp(),
+      appealConfirmedBy: ['member2', 'member3'],
+    });
+  });
+
+  const confirmerDb = testEnv.authenticatedContext('uid-4').firestore();
+
+  // Phase 1：第3個人(member4)用真正受規則保護的updateDoc()，把自己這筆確認
+  // 寫進appealConfirmedBy——這一步必須先成功，門檻人數才會「真的commit」到文件裡。
+  await assertSucceeds(updateDoc(doc(confirmerDb, 'groups/main/reports/report-1'), {
+    appealConfirmedBy: ['member2', 'member3', 'member4'],
+  }));
+
+  // Phase 2：Phase 1commit之後，用一次獨立的deleteDoc()送出刪除——這時候
+  // resource.data.appealConfirmedBy.size()已經真的是3，validAppealDelete
+  // 應該通過。舊版bug會發生在等價於「跳過Phase 1、直接做這一步」的情境，
+  // 那種情境下resource.data永遠只有2筆、必定失敗，可參考上一個測試
+  // (deleting the report fails with fewer than 3 confirmations...)裡
+  // tooEarlyDb那段的失敗案例。
+  await assertSucceeds(deleteDoc(doc(confirmerDb, 'groups/main/reports/report-1')));
+});
+
+test('once 3 confirmations are committed, a 4th member cannot append another confirmation via update', { skip: !shouldRun }, async () => {
+  await seedAppealFixture(testEnv);
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'groups/main/members/member5'), {
+      authUid: 'uid-5', active: true, name: 'Confirmer5', loginEmail: 'uid-5@dazhugong.invalid',
+    });
+    await updateDoc(doc(context.firestore(), 'groups/main/reports/report-1'), {
+      appealedAt: serverTimestamp(),
+      appealConfirmedBy: ['member2', 'member3', 'member4'],
+    });
+  });
+
+  // 文件已經達到門檻人數，只能走delete；這裡驗證新增的
+  // before.size() < appealConfirmationsRequired() 防線會擋下第4筆確認的update，
+  // 避免文件在「該被刪除」的狀態下繼續被疊加確認人數。
+  const fifthMemberDb = testEnv.authenticatedContext('uid-5').firestore();
+  await assertFails(updateDoc(doc(fifthMemberDb, 'groups/main/reports/report-1'), {
+    appealConfirmedBy: ['member2', 'member3', 'member4', 'member5'],
+  }));
+});

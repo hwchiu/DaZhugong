@@ -11,6 +11,7 @@ const authState = vi.hoisted(() => ({
 const useGroupMock = vi.hoisted(() => vi.fn());
 const useTokensMock = vi.hoisted(() => vi.fn());
 const useWeatherMock = vi.hoisted(() => vi.fn());
+const useStockPriceMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../store/authStore.js', () => ({
   useAuthStore: (selector) => selector(authState),
@@ -31,12 +32,21 @@ vi.mock('../hooks/useWeather.js', () => ({
   default: useWeatherMock,
 }));
 
+vi.mock('../hooks/useStockPrice.js', () => ({
+  useStockPrice: useStockPriceMock,
+  default: useStockPriceMock,
+}));
+
 vi.mock('../components/PendingBanner.jsx', () => ({
   default: () => <div>保留中的待確認提醒</div>,
 }));
 
 vi.mock('../components/DateWeatherBar.jsx', () => ({
   default: () => <div>天氣資訊</div>,
+}));
+
+vi.mock('../components/StockPriceBar.jsx', () => ({
+  default: () => <div>台積電股價</div>,
 }));
 
 vi.mock('../components/LiveClock.jsx', () => ({
@@ -88,6 +98,7 @@ beforeEach(() => {
   useGroupMock.mockReset();
   useTokensMock.mockReset();
   useWeatherMock.mockReset();
+  useStockPriceMock.mockReset();
   useGroupMock.mockReturnValue({
     members: [],
     loading: false,
@@ -101,6 +112,11 @@ beforeEach(() => {
   useWeatherMock.mockReturnValue({
     weather: null,
     weatherFailed: false,
+  });
+  useStockPriceMock.mockReturnValue({
+    quote: null,
+    quoteFailed: false,
+    autoRefreshStopped: false,
   });
 });
 
@@ -165,6 +181,17 @@ describe('Home page', () => {
     expect((await screen.findByTestId('piggy-bank-3d')).textContent).toContain('1102 Token');
     expect(screen.queryByText('NT$')).toBe(null);
     expect(screen.queryByText('元')).toBe(null);
+  });
+
+  it('renders the TSMC stock price chip as the first item in the weather/clock row, ahead of the weather chip', () => {
+    renderHome();
+
+    const row = screen.getByText('台積電股價').closest('div')?.parentElement;
+    expect(row).toBeTruthy();
+    const chipTexts = Array.from(row.children).map((child) => child.textContent);
+    // 需求明確要求「顯示在天氣氣泡框的前方，即那一列的第一個」——這裡直接
+    // 比較兩個chip在DOM裡的相對順序，鎖定這個排列順序，不只是「兩個都有出現」。
+    expect(chipTexts.indexOf('台積電股價')).toBeLessThan(chipTexts.indexOf('天氣資訊'));
   });
 
   it("counts only today's confirmed reports for the mood chip and per-member stats", () => {
@@ -233,14 +260,36 @@ describe('Home page', () => {
     expect(screen.getByRole('heading', { name: '歷史紀錄頁面' })).toBeTruthy();
   });
 
-  it('navigates to settings from the header gear icon', async () => {
+  it('reloads the whole page when the header refresh icon is clicked (replaces the old settings shortcut)', async () => {
     const user = userEvent.setup();
+    const originalLocation = window.location;
+    const reloadMock = vi.fn();
+    // window.location不能直接被vi.spyOn()接管(jsdom把reload定義成不可重新設定的
+    // 屬性)，所以用Object.defineProperty整個換掉window.location物件本身，
+    // 測完再換回來——這裡刻意不驗證瀏覽器「真的重新整理」了什麼，只驗證
+    // 點擊後confirmed呼叫了reload()，這就是這顆按鈕唯一該做的事。
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      writable: true,
+      value: { ...originalLocation, reload: reloadMock },
+    });
 
-    renderHome();
+    try {
+      renderHome();
 
-    await user.click(screen.getByRole('link', { name: '設定' }));
+      // 右上角原本連到/settings的齒輪icon已經改成整頁重新整理按鈕，不再是連結。
+      expect(screen.queryByRole('link', { name: '設定' })).toBe(null);
 
-    expect(screen.getByRole('heading', { name: '設定頁面' })).toBeTruthy();
+      await user.click(screen.getByRole('button', { name: '重新整理頁面' }));
+
+      expect(reloadMock).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        writable: true,
+        value: originalLocation,
+      });
+    }
   });
 
   it('opens and closes the rules info modal', async () => {
@@ -271,6 +320,9 @@ describe('Home page', () => {
     expect(drawer).toBeTruthy();
     expect(screen.getByRole('link', { name: /投票/ })).toBeTruthy();
     expect(screen.getByRole('link', { name: /統計/ })).toBeTruthy();
+    // 設定頁的入口已經從頁首的齒輪icon搬到這個選單抽屜裡，這裡順便確認
+    // 抽屜還是找得到它，沒有變成完全無法到達的頁面。
+    expect(screen.getByRole('link', { name: /設定/ })).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: '關閉選單' }));
 

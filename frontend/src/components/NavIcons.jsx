@@ -101,6 +101,20 @@ export function PlusIcon({ className }) {
   );
 }
 
+export function RefreshIcon({ className }) {
+  return (
+    <svg {...BASE_PROPS} className={className}>
+      {/* 雙箭頭循環刷新符號：業界常見的refresh/reload畫法(兩段各約270度的弧線
+          首尾相接、各自帶一個折角箭頭)，維持跟其他Loft風格圖示一致的細線條、
+          圓角端點、無填色——首頁右上角「整頁重新整理」按鈕用這個取代原本
+          連到設定頁的齒輪icon。 */}
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+    </svg>
+  );
+}
+
 export const NAV_ICON_BY_KEY = {
   home: HomeIcon,
   vote: VoteIcon,

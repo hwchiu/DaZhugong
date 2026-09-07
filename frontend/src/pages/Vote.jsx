@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import MemberAvatar from '../components/MemberAvatar.jsx';
+import VoteMemberCard from '../components/VoteMemberCard.jsx';
 import { useGroup } from '../hooks/useGroup.js';
 import { useNowTicker } from '../hooks/useNowTicker.js';
 import { useTokens } from '../hooks/useTokens.js';
 import { reportAndConfirmToken } from '../services/tokenService.js';
 import { useAuthStore } from '../store/authStore.js';
-import { formatCooldownRemaining, getCooldownStatus } from '../utils/cooldown.js';
+import { getCooldownStatus } from '../utils/cooldown.js';
 
 const SAFE_LOAD_ERROR_MESSAGE = '目前無法載入投票資料，請稍後再試。';
 const SAFE_SUBMIT_ERROR_MESSAGE = '目前無法儲存這筆紀錄，請稍後再試。';
@@ -42,6 +42,18 @@ function toSafeLoadMessage(error) {
   return error instanceof Error && error.message ? SAFE_LOAD_ERROR_MESSAGE : SAFE_LOAD_ERROR_MESSAGE;
 }
 
+// 把「已確認票數」跟「冷卻狀態」這兩個衍生欄位加到一個成員物件上——不管是可以
+// 點選的其他成員、還是唯讀顯示用的當前使用者自己，都是用同一套算法，確保兩邊
+// 看到的「已確認幾票」「還剩多少冷卻時間」數字定義完全一致，不會各自維護一份
+// 算法卻不小心兜不起來。
+function decorateMemberWithVoteInfo(member, { totalsByTargetId, tokens, now }) {
+  return {
+    ...member,
+    confirmedCount: totalsByTargetId.get(member.id) ?? 0,
+    cooldown: getCooldownStatus(tokens, member.id, now),
+  };
+}
+
 export default function Vote() {
   const navigate = useNavigate();
   const currentMember = useAuthStore((state) => state.currentMember);
@@ -62,12 +74,26 @@ export default function Vote() {
     () =>
       members
         .filter((member) => member?.active === true && member?.id !== currentMember?.id)
-        .map((member) => ({
-          ...member,
-          confirmedCount: totalsByTargetId.get(member.id) ?? 0,
-          cooldown: getCooldownStatus(tokens, member.id, now),
-        })),
+        .map((member) => decorateMemberWithVoteInfo(member, { totalsByTargetId, tokens, now })),
     [currentMember?.id, members, tokens, totalsByTargetId, now],
+  );
+  // 新增：把「當前使用者自己」也算成同一種形狀的物件(有confirmedCount/cooldown)，
+  // 純粹是要讓使用者在這個頁面上看到自己的冷卻時間——不是拿來投票用的，所以
+  // 特意跟eligibleMembers分開算，不會被selectedMember/handleSelect等既有的
+  // 選人邏輯誤用到。
+  const currentMemberCard = useMemo(
+    () =>
+      currentMember?.id
+        ? decorateMemberWithVoteInfo(currentMember, { totalsByTargetId, tokens, now })
+        : null,
+    [currentMember, totalsByTargetId, tokens, now],
+  );
+  // 畫面上實際要排列的卡片：自己排在最前面(方便一進頁面就看到自己的冷卻資訊)，
+  // 後面接其他可投票的成員。「有幾人可選」「還有沒有其他成員」這類文案，
+  // 仍然只看eligibleMembers——自己不算在「可選」名單裡。
+  const displayMembers = useMemo(
+    () => (currentMemberCard ? [currentMemberCard, ...eligibleMembers] : eligibleMembers),
+    [currentMemberCard, eligibleMembers],
   );
   const selectedMember = eligibleMembers.find((member) => member.id === selectedId) ?? null;
   const selectedTargetMember =
@@ -205,65 +231,42 @@ export default function Vote() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-semibold text-slate-900">選擇違規者</h2>
-                  <p className="mt-1 text-sm leading-6 text-slate-600">只顯示其他 active 成員，票數依已確認紀錄計算。</p>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">
+                    也會顯示你自己的卡片方便查看冷卻時間，但不能選自己；其餘為其他 active 成員，票數依已確認紀錄計算。
+                  </p>
                 </div>
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
                   {eligibleMembers.length} 人可選
                 </span>
               </div>
 
-              {eligibleMembers.length ? (
-                <div className="mt-5 grid grid-cols-2 gap-3">
-                  {eligibleMembers.map((member) => {
-                    const selected = member.id === selectedMember?.id;
-                    const memberName = getMemberName(member);
-                    const { cooldown } = member;
-                    const disabled = pending || cooldown.inCooldown;
+              {displayMembers.length ? (
+                <>
+                  <div className="mt-5 grid grid-cols-2 gap-3">
+                    {displayMembers.map((member) => {
+                      const isSelf = member.id === currentMember?.id;
+                      const selected = !isSelf && member.id === selectedMember?.id;
+                      const memberName = getMemberName(member);
 
-                    return (
-                      <button
-                        key={member.id}
-                        type="button"
-                        disabled={disabled}
-                        aria-pressed={selected}
-                        aria-label={
-                          cooldown.inCooldown
-                            ? `${memberName}，冷卻中還剩 ${formatCooldownRemaining(cooldown.remainingMs)}，暫時無法再次投票`
-                            : `${memberName}，已確認 ${member.confirmedCount} 票`
-                        }
-                        onClick={() => handleSelect(member)}
-                        className={`flex min-h-44 flex-col items-center rounded-[1.75rem] border px-4 py-4 text-center transition focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-offset-2 focus-visible:outline-[#9f1239] disabled:cursor-not-allowed disabled:opacity-60 ${
-                          selected
-                            ? 'border-slate-900 bg-slate-50 shadow-md shadow-slate-200'
-                            : 'border-slate-200 bg-white hover:border-slate-300'
-                        }`}
-                      >
-                        <MemberAvatar member={member} size="md" />
-                        <span className="mt-3 text-base font-semibold text-slate-900">{memberName}</span>
-                        {cooldown.inCooldown ? (
-                          <span
-                            role="timer"
-                            aria-live="off"
-                            className="mt-2 rounded-full bg-slate-200 px-3 py-1 text-sm font-bold tabular-nums text-slate-700"
-                          >
-                            冷卻中 {formatCooldownRemaining(cooldown.remainingMs)}
-                          </span>
-                        ) : (
-                          <span className="bg-brand-soft text-brand mt-2 rounded-full px-3 py-1 text-sm font-medium">
-                            已確認 {member.confirmedCount} 票
-                          </span>
-                        )}
-                        <span className="mt-3 text-sm leading-6 text-slate-600">
-                          {cooldown.inCooldown
-                            ? '剛被投過票，需要等冷卻時間結束。'
-                            : selected
-                              ? '已選擇，準備填寫原因。'
-                              : '點一下即可選擇。'}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                      return (
+                        <VoteMemberCard
+                          key={member.id}
+                          member={member}
+                          memberName={memberName}
+                          selected={selected}
+                          pending={pending}
+                          isSelf={isSelf}
+                          onSelect={() => handleSelect(member)}
+                        />
+                      );
+                    })}
+                  </div>
+                  {eligibleMembers.length === 0 ? (
+                    <p className="mt-4 text-center text-sm leading-6 text-slate-500">
+                      目前沒有其他可投票的成員，等待其他 active 成員加入後就能在這裡選擇違規者。
+                    </p>
+                  ) : null}
+                </>
               ) : (
                 <div className="mt-5 rounded-[1.5rem] border border-dashed border-slate-200 bg-slate-50 px-5 py-8 text-center">
                   <p className="text-base font-semibold text-slate-900">目前沒有其他可投票的成員。</p>
