@@ -1,79 +1,80 @@
 import { useEffect, useState } from 'react';
 
-// TWSE(證交所)基本市況報導系統的個股即時行情端點。ex_ch=tse_2330.tw代表
-// 「上市(tse)股票代號2330(台積電)」；json=1&delay=0是這個端點常見的建議寫法
-// (實測不管json帶什麼值，回傳都是JSON，但保留這兩個參數維持跟外部文件/
-// 範例一致，降低這個端點行為跟預期不同的風險)。
+// 台灣證交所「官方」OpenAPI(開放資料平台)，跟mis.twse.com.tw是完全不同的兩個系統：
+// mis.twse.com.tw是證交所自家「基本市況報導網站」在用的內部端點，沒有對外開放CORS，
+// 部署到Firebase後瀏覽器直接fetch()會被擋下來(這是2026-09-07實際部署後踩到的問題)。
+// openapi.twse.com.tw則是證交所刻意對外開放給第三方使用的公開資料平台，目前查到的
+// 多筆第三方範例都是直接在瀏覽器/React端fetch()使用、沒有人另外提到CORS問題，
+// 這裡改用這個端點來源。
 //
-// 注意(重要)：這是台灣證交所提供給自家「基本市況報導網站」用的公開端點，
-// 並不是設計給任意網域的前端直接fetch()使用的公開API，伺服器不一定會回傳
-// Access-Control-Allow-Origin，瀏覽器可能會擋下這個跨來源請求(CORS)。這裡
-// 依照使用者指定的端點原樣實作、並且做好失敗時的容錯(fetchLatestQuote失敗
-// 就顯示「暫時無法取得」，不會讓整個首頁掛掉)，但如果部署後發現價格一直
-// 顯示「暫時無法取得」，很可能就是被CORS擋下來，屆時需要另外架一個小型
-// 後端/雲端函式轉發這個請求(幫回應加上Access-Control-Allow-Origin)。
-const STOCK_SYMBOL = 'tse_2330.tw';
-const STOCK_QUOTE_BASE_URL = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${STOCK_SYMBOL}&json=1&delay=0`;
+// 代價(重要，這裡刻意換了功能定義，不是單純換個網址)：這個端點回傳的是「最近一個
+// 交易日」的收盤資料，不是盤中逐筆跳動的即時成交價。STOCK_DAY_ALL這份資料集本身
+// 一天只會更新一次(通常在收盤後的下午)，而且它不支援查詢過去特定日期——不管什麼
+// 時間點打這支API，拿到的永遠是「目前最新的那一個交易日」的整批資料，不會是「今天
+// 這一秒的成交價」。所以這裡顯示的文案是「收盤」而不是「最新成交」，畫面上也會帶一個
+// 月/日標示，讓使用者看得出來這個數字是哪一天的(如果現在是還沒收盤的交易日上午，
+// 或今天剛好不是交易日，這裡本來就會顯示「最近一個交易日」的收盤價，不一定是今天)。
+const STOCK_CODE = '2330';
+const STOCK_QUOTE_URL = 'https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL';
 const POLL_INTERVAL_MS = 30_000;
-const STOCK_FETCH_TIMEOUT_MS = 5000;
-// 每天下午2點(14:00)之後就不再自動打API更新——不論現在幾點打開頁面，只要
-// 「現在」已經過了當天14:00，就停止自動輪詢；如果頁面一直開著跨過午夜，
-// 隔天現在時間又會早於14:00，會自動恢復輪詢，不需要額外處理「跨日」的邏輯，
-// 也不用管當天究竟是不是交易日——這裡只單純照使用者指定的時間規則判斷。
-const AUTO_REFRESH_CUTOFF_HOUR = 14;
-
-function isWithinAutoRefreshWindow(date = new Date()) {
-  return date.getHours() < AUTO_REFRESH_CUTOFF_HOUR;
-}
+const STOCK_FETCH_TIMEOUT_MS = 8000;
 
 function parsePrice(value) {
   const price = Number.parseFloat(value);
   return Number.isFinite(price) ? price : null;
 }
 
+// 把民國(ROC)日期字串("1150731")轉成"07/31"這種好讀的月/日格式，純粹是給畫面上
+// 一個標示用，不需要換算成西元年——TWSE這個資料集本來就不支援指定日期查詢，換算
+// 年份對這裡的顯示需求沒有實質幫助。
+function formatRocDateAsMonthDay(rocDate) {
+  if (typeof rocDate !== 'string' || rocDate.length < 5) {
+    return null;
+  }
+  const month = rocDate.slice(-4, -2);
+  const day = rocDate.slice(-2);
+  return `${month}/${day}`;
+}
+
 async function fetchLatestQuote(signal) {
-  // 加上時間戳當cache-busting參數，避免瀏覽器或中間的快取伺服器把每30秒
-  // 打的請求都擋成同一份舊回應——這是這個TWSE MIS端點文件常見的建議寫法。
-  const response = await fetch(`${STOCK_QUOTE_BASE_URL}&_=${Date.now()}`, { signal });
+  const response = await fetch(STOCK_QUOTE_URL, { signal });
 
   if (!response.ok) {
     throw new Error('stock quote request failed');
   }
 
-  const payload = await response.json();
-  const quote = payload?.msgArray?.[0];
+  const rows = await response.json();
+  const row = Array.isArray(rows) ? rows.find((item) => item?.Code === STOCK_CODE) : null;
 
-  if (!quote) {
-    throw new Error('stock quote payload missing msgArray entry');
+  if (!row) {
+    throw new Error('stock quote row not found for 2330');
   }
 
-  // z是「當前盤中成交價」，但盤中偶爾會因為那個瞬間剛好沒有新成交而回傳"-"；
-  // 這種情況退回用y(昨日收盤價)顯示，確保畫面上一定有一個有意義的價格可看，
-  // 不會讓使用者看到一個沒有資訊量的"-"符號。
-  const lastTradePrice = parsePrice(quote.z);
-  const latestPrice = lastTradePrice ?? parsePrice(quote.y);
-
-  if (latestPrice === null) {
-    throw new Error('stock quote missing both z and y price fields');
+  const price = parsePrice(row.ClosingPrice);
+  if (price === null) {
+    throw new Error('stock quote missing ClosingPrice');
   }
 
   return {
-    price: latestPrice,
-    isLastTradePrice: lastTradePrice !== null,
-    stockName: quote.n || '台積電',
+    price,
+    stockName: row.Name || '台積電',
+    tradeDateLabel: formatRocDateAsMonthDay(row.Date),
     updatedAt: Date.now(),
   };
 }
 
-// 首頁天氣氣泡列最前面的台積電(2330)股價：掛載時抓一次，之後只要還在當天
-// 14:00之前，就每30秒自動重新打一次TWSE MIS API更新畫面——是重新抓資料、
-// 換掉畫面上顯示的數字，不是對整個瀏覽器頁面做reload。過了14:00就停止繼續
-// 打API，畫面會停在最後一次抓到的價格，不會再變動；autoRefreshStopped
-// 就是給UI用來顯示「目前是不是還在自動更新」的旗標。
+// 首頁天氣氣泡列最前面的台積電(2330)收盤價：掛載時抓一次，之後每30秒重新打一次
+// TWSE OpenAPI更新畫面——是重新抓資料、換掉畫面上顯示的數字，不是對整個瀏覽器頁面
+// 做reload。
+//
+// 沒有「過了14:00停止自動更新」這個機制了(舊版mis.twse.com.tw即時價那個版本才有)：
+// 這份資料本來就一天只會真的變一次，繼續每30秒檢查一次的代價微乎其微，反而拿掉
+// 這個機制可以確保「當天真正收盤、資料上線」的那個時間點(通常在下午，可能早於或
+// 晚於14:00，證交所沒有公告精確時間)一定會被抓到，不會因為抓取視窗已經關閉而
+// 錯過當天的更新、一直顯示前一個交易日的價格直到使用者手動重新整理頁面。
 export function useStockPrice() {
   const [quote, setQuote] = useState(null);
   const [quoteFailed, setQuoteFailed] = useState(false);
-  const [autoRefreshStopped, setAutoRefreshStopped] = useState(() => !isWithinAutoRefreshWindow());
 
   useEffect(() => {
     if (typeof fetch !== 'function') {
@@ -104,18 +105,8 @@ export function useStockPrice() {
         });
     }
 
-    // 開頁時不管現在幾點都先抓一次——就算已經過了14:00不再自動更新，使用者
-    // 一開頁還是應該看到「最後一次的成交價」，14:00規則管的是後續還要不要
-    // 繼續自動輪詢，不是要不要顯示這個功能本身。
     runFetch();
-
-    const intervalId = setInterval(() => {
-      const withinWindow = isWithinAutoRefreshWindow();
-      setAutoRefreshStopped(!withinWindow);
-      if (withinWindow) {
-        runFetch();
-      }
-    }, POLL_INTERVAL_MS);
+    const intervalId = setInterval(runFetch, POLL_INTERVAL_MS);
 
     return () => {
       cancelled = true;
@@ -123,7 +114,7 @@ export function useStockPrice() {
     };
   }, []);
 
-  return { quote, quoteFailed, autoRefreshStopped };
+  return { quote, quoteFailed };
 }
 
 export default useStockPrice;

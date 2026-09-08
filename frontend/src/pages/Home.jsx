@@ -10,6 +10,7 @@ import SpecialTokenFlow from '../components/SpecialTokenFlow.jsx';
 import StockPriceBar from '../components/StockPriceBar.jsx';
 import WeatherBackground from '../components/WeatherBackground.jsx';
 import { getDailyBackgroundPhotoUrl } from '../utils/dailyBackgroundPhoto.js';
+import { getMoodDisplay } from '../utils/moodIcons.js';
 import { hasSummonedSpecialTokenToday } from '../utils/specialToken.js';
 import { pickRandomGreeting } from '../data/greetings.js';
 import { useGroup } from '../hooks/useGroup.js';
@@ -74,16 +75,6 @@ function toMillis(timestamp) {
 function startOfTodayMillis() {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-}
-
-function getMoodForCount(count) {
-  if (count <= 2) {
-    return { emoji: '😊', label: '心情很好，繼續保持！' };
-  }
-  if (count <= 5) {
-    return { emoji: '😐', label: '有點躁動，小心一點' };
-  }
-  return { emoji: '😣', label: '快要爆炸了，冷靜一下' };
 }
 
 function PiggyBankErrorFallback({ retry }) {
@@ -191,7 +182,7 @@ export default function Home() {
   const [greeting] = useState(() => pickRandomGreeting());
   const [heroBackgroundPhotoUrl] = useState(() => getDailyBackgroundPhotoUrl());
   const { weather, weatherFailed } = useWeather();
-  const { quote: stockQuote, quoteFailed: stockQuoteFailed, autoRefreshStopped: stockAutoRefreshStopped } = useStockPrice();
+  const { quote: stockQuote, quoteFailed: stockQuoteFailed } = useStockPrice();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
 
@@ -263,7 +254,7 @@ export default function Home() {
     setSpecialFlowOpen(false);
     setResetRubToken((token) => token + 1);
   }
-  const mood = getMoodForCount(todayTotal);
+  const mood = getMoodDisplay(todayTotal);
 
   return (
     <section className="home-hero relative flex flex-col text-stone-900" style={{ background: 'var(--brand-bg)' }}>
@@ -321,7 +312,6 @@ export default function Home() {
           <StockPriceBar
             quote={stockQuote}
             quoteFailed={stockQuoteFailed}
-            autoRefreshStopped={stockAutoRefreshStopped}
             glass
           />
           <DateWeatherBar weather={weather} weatherFailed={weatherFailed} glass />
@@ -389,7 +379,7 @@ export default function Home() {
 
         <div className="flex items-stretch gap-3">
           <div className="flex flex-col items-center justify-center gap-1 rounded-[1.5rem] bg-white px-4 py-3 text-center shadow-sm shadow-stone-200">
-            <span aria-hidden="true" className="text-2xl">{mood.emoji}</span>
+            <img src={mood.icon} alt="" aria-hidden="true" className="h-10 w-10 object-contain" />
             <span className="max-w-[5rem] text-xs font-semibold leading-4 text-stone-600">{mood.label}</span>
           </div>
 

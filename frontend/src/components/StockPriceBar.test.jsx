@@ -8,40 +8,33 @@ afterEach(() => {
 
 describe('StockPriceBar', () => {
   it('shows a loading message before the first quote arrives', () => {
-    render(<StockPriceBar quote={null} quoteFailed={false} autoRefreshStopped={false} glass />);
+    render(<StockPriceBar quote={null} quoteFailed={false} glass />);
 
     expect(screen.getByText('台積電股價讀取中…')).toBeTruthy();
   });
 
-  it('shows the latest price with two decimal places while auto-refresh is still active', () => {
+  it('shows the closing price with two decimal places plus the trade date label', () => {
     render(
-      <StockPriceBar
-        quote={{ price: 1055, isLastTradePrice: true, stockName: '台積電' }}
-        quoteFailed={false}
-        autoRefreshStopped={false}
-      />,
+      <StockPriceBar quote={{ price: 1055, stockName: '台積電', tradeDateLabel: '08/01' }} quoteFailed={false} />,
     );
 
     expect(screen.getByText('台積電 1055.00')).toBeTruthy();
-    expect(screen.queryByText('‧不再更新')).toBe(null);
-    expect(screen.getByRole('status').getAttribute('aria-label')).toBe('台積電最新成交價 1055 元');
+    expect(screen.getByText('08/01收盤')).toBeTruthy();
+    expect(screen.getByRole('status').getAttribute('aria-label')).toBe('台積電 08/01收盤價 1055 元');
   });
 
-  it('shows a subdued "no longer updating" suffix once auto-refresh has stopped (past the 14:00 cutoff)', () => {
+  it('omits the date suffix gracefully when tradeDateLabel could not be parsed', () => {
     render(
-      <StockPriceBar
-        quote={{ price: 1055, isLastTradePrice: false, stockName: '台積電' }}
-        quoteFailed={false}
-        autoRefreshStopped
-      />,
+      <StockPriceBar quote={{ price: 1055, stockName: '台積電', tradeDateLabel: null }} quoteFailed={false} />,
     );
 
-    expect(screen.getByText('‧不再更新')).toBeTruthy();
-    expect(screen.getByRole('status').getAttribute('aria-label')).toBe('台積電最新成交價 1055 元，已停止自動更新');
+    expect(screen.getByText('台積電 1055.00')).toBeTruthy();
+    expect(screen.queryByText(/收盤$/)).toBe(null);
+    expect(screen.getByRole('status').getAttribute('aria-label')).toBe('台積電收盤價 1055 元');
   });
 
   it('shows a failure message when the quote could not be fetched at all', () => {
-    render(<StockPriceBar quote={null} quoteFailed autoRefreshStopped={false} />);
+    render(<StockPriceBar quote={null} quoteFailed />);
 
     expect(screen.getByText('台積電股價暫時無法取得')).toBeTruthy();
   });

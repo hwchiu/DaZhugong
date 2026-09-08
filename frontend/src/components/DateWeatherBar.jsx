@@ -1,25 +1,43 @@
-const WEATHER_CODE_ICONS = new Map([
-  [0, '☀️'],
-  [1, '🌤️'],
-  [2, '⛅'],
-  [3, '☁️'],
-  [45, '🌫️'],
-  [48, '🌫️'],
-  [51, '🌦️'],
-  [53, '🌦️'],
-  [55, '🌦️'],
-  [61, '🌧️'],
-  [63, '🌧️'],
-  [65, '🌧️'],
-  [71, '🌨️'],
-  [73, '🌨️'],
-  [75, '🌨️'],
-  [80, '🌦️'],
-  [81, '🌧️'],
-  [82, '⛈️'],
-  [95, '⛈️'],
-  [96, '⛈️'],
-  [99, '⛈️'],
+import iconSunny from '../assets/lego-icons/weather/sunny.png';
+import iconPartlyCloudy from '../assets/lego-icons/weather/partly_cloudy.png';
+import iconOvercast from '../assets/lego-icons/weather/overcast.png';
+import iconFog from '../assets/lego-icons/weather/fog.png';
+import iconDrizzleLight from '../assets/lego-icons/weather/drizzle_light.png';
+import iconDrizzle from '../assets/lego-icons/weather/drizzle.png';
+import iconDrizzleDense from '../assets/lego-icons/weather/drizzle_dense.png';
+import iconRain from '../assets/lego-icons/weather/rain.png';
+import iconSnowLight from '../assets/lego-icons/weather/snow_light.png';
+import iconSnowHeavy from '../assets/lego-icons/weather/snow_heavy.png';
+import iconThunderstorm from '../assets/lego-icons/weather/thunderstorm.png';
+import iconThunderstormSevere from '../assets/lego-icons/weather/thunderstorm_severe.png';
+
+// Open-Meteo的weather_code(WMO標準代碼)對應到使用者提供的樂高風格天氣圖示。
+// 有些相近代碼(例如1跟2、61/63/81這種同一種天氣不同強度)目前手上只有一張對應的
+// 圖，就共用同一張圖示——這是因為切出來的樂高圖示集本身沒有對應到每一個WMO代碼的
+// 專屬畫面，共用同一張圖示比硬找一張語意不符的圖更合理。文字說明(WEATHER_CODE_LABELS)
+// 維持原本的細分，不受圖示共用影響。
+const WEATHER_CODE_ICON_SRC = new Map([
+  [0, iconSunny],
+  [1, iconPartlyCloudy],
+  [2, iconPartlyCloudy],
+  [3, iconOvercast],
+  [45, iconFog],
+  [48, iconFog],
+  [51, iconDrizzleLight],
+  [53, iconDrizzle],
+  [55, iconDrizzleDense],
+  [61, iconRain],
+  [63, iconRain],
+  [65, iconRain],
+  [71, iconSnowLight],
+  [73, iconSnowLight],
+  [75, iconSnowHeavy],
+  [80, iconDrizzleDense],
+  [81, iconRain],
+  [82, iconThunderstormSevere],
+  [95, iconThunderstorm],
+  [96, iconThunderstormSevere],
+  [99, iconThunderstormSevere],
 ]);
 
 const WEATHER_CODE_LABELS = new Map([
@@ -46,8 +64,8 @@ const WEATHER_CODE_LABELS = new Map([
   [99, '雷雨'],
 ]);
 
-function getWeatherIcon(code) {
-  return WEATHER_CODE_ICONS.get(code) ?? '🌡️';
+function getWeatherIconSrc(code) {
+  return WEATHER_CODE_ICON_SRC.get(code) ?? iconPartlyCloudy;
 }
 
 function getWeatherLabel(code) {
@@ -70,12 +88,12 @@ export default function DateWeatherBar({ weather, weatherFailed, glass = false }
     >
       {weather ? (
         <>
-          <span aria-hidden="true">{getWeatherIcon(weather.weatherCode)}</span>
+          <img src={getWeatherIconSrc(weather.weatherCode)} alt="" aria-hidden="true" className="h-5 w-5 object-contain" />
           <span>{Math.round(weather.temperature)}°C {getWeatherLabel(weather.weatherCode)}</span>
         </>
       ) : weatherFailed ? (
         <>
-          <span aria-hidden="true">🌤️</span>
+          <img src={iconPartlyCloudy} alt="" aria-hidden="true" className="h-5 w-5 object-contain" />
           <span>天氣暫時無法取得</span>
         </>
       ) : (

@@ -1,9 +1,16 @@
 // 首頁天氣氣泡列最前面的台積電(2330)股價氣泡，樣式刻意跟DateWeatherBar.jsx
 // 完全對稱(同一套glass/非glass的class)，才能在同一列排在一起看起來像同一組
 // 資訊chip，不會有一個特別突兀。資料來源見 ../hooks/useStockPrice.js。
-export default function StockPriceBar({ quote, quoteFailed, autoRefreshStopped, glass = false }) {
+//
+// 2026-09-07改版：資料來源從「盤中即時成交價」換成TWSE官方OpenAPI的「當日收盤價」
+// (原因：mis.twse.com.tw那個即時價端點部署到Firebase後被CORS擋下來，詳見
+// useStockPrice.js的說明)。文案跟著從「最新成交」改成「收盤」，並且帶一個月/日
+// 標示，讓使用者看得出來這個數字是哪一天的收盤價——不再有「自動更新已停止」這個
+// 狀態了，因為現在的資料本來就是一天只變一次的收盤價，沒有「即時/已停止即時」的
+// 分別可言。
+export default function StockPriceBar({ quote, quoteFailed, glass = false }) {
   const ariaLabel = quote
-    ? `台積電最新成交價 ${quote.price} 元${autoRefreshStopped ? '，已停止自動更新' : ''}`
+    ? `台積電${quote.tradeDateLabel ? ` ${quote.tradeDateLabel}` : ''}收盤價 ${quote.price} 元`
     : quoteFailed
       ? '台積電股價暫時無法取得'
       : '台積電股價讀取中';
@@ -25,10 +32,9 @@ export default function StockPriceBar({ quote, quoteFailed, autoRefreshStopped, 
           <span>
             {quote.stockName} {quote.price.toFixed(2)}
           </span>
-          {/* 過了每天下午14:00不再自動輪詢後，用這個小標籤讓使用者知道畫面
-              停在「最後一次抓到的價格」，不是還在即時跳動——只描述這個功能
-              自己的行為(不再自動更新)，不去斷言證交所實際上是不是真的收盤了。 */}
-          {autoRefreshStopped ? <span className="opacity-70">‧不再更新</span> : null}
+          {quote.tradeDateLabel ? (
+            <span className="opacity-70">{quote.tradeDateLabel}收盤</span>
+          ) : null}
         </>
       ) : quoteFailed ? (
         <>

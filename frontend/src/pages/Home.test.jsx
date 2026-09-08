@@ -116,7 +116,6 @@ beforeEach(() => {
   useStockPriceMock.mockReturnValue({
     quote: null,
     quoteFailed: false,
-    autoRefreshStopped: false,
   });
 });
 
