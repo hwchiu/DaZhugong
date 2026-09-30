@@ -643,3 +643,130 @@ test('once 3 confirmations are committed, a 4th member cannot append another con
     appealConfirmedBy: ['member2', 'member3', 'member4', 'member5'],
   }));
 });
+
+// ---- 結算(Settlement)：兩階段(Phase 1建立快照、Phase 2鎖定report)以及各種edge case ----
+async function seedSettlementFixture(testEnv) {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'groups/main/members/member1'), {
+      authUid: 'uid-1', active: true, name: 'Owner', loginEmail: 'uid-1@dazhugong.invalid',
+    });
+    await setDoc(doc(db, 'groups/main/members/member2'), {
+      authUid: 'uid-2', active: true, name: 'Target', loginEmail: 'uid-2@dazhugong.invalid',
+    });
+    await setDoc(doc(db, 'groups/main/reports/report-1'), {
+      targetId: 'member2',
+      reporterId: 'member1',
+      reason: '討論會議',
+      timestamp: serverTimestamp(),
+      tokenType: 'NORMAL',
+      displayTokenCount: 1,
+      tokenValue: 1,
+      source: 'NORMAL_FLOW',
+    });
+  });
+}
+
+function settlementSnapshotPayload(overrides = {}) {
+  return {
+    groupId: 'main',
+    periodStart: null,
+    periodEnd: serverTimestamp(),
+    tokenUnitPrice: 100,
+    currency: 'TWD',
+    totalTokenValue: 1,
+    totalAmount: 100,
+    members: [{ memberId: 'member2', memberName: 'Target', totalTokenValue: 1, amount: 100 }],
+    status: 'SETTLED',
+    createdBy: 'member1',
+    createdAt: serverTimestamp(),
+    ...overrides,
+  };
+}
+
+test('an authenticated member can create a settlement snapshot, then lock a settleable report to it', { skip: !shouldRun }, async () => {
+  await seedSettlementFixture(testEnv);
+  const memberDb = testEnv.authenticatedContext('uid-1').firestore();
+
+  await assertSucceeds(setDoc(
+    doc(memberDb, 'groups/main/settlements/20260930-001'),
+    settlementSnapshotPayload(),
+  ));
+
+  await assertSucceeds(updateDoc(doc(memberDb, 'groups/main/reports/report-1'), {
+    settlementId: '20260930-001',
+  }));
+});
+
+test('locking a report fails if the referenced settlement document does not exist yet (two-phase ordering)', { skip: !shouldRun }, async () => {
+  await seedSettlementFixture(testEnv);
+  const memberDb = testEnv.authenticatedContext('uid-1').firestore();
+
+  await assertFails(updateDoc(doc(memberDb, 'groups/main/reports/report-1'), {
+    settlementId: 'does-not-exist',
+  }));
+});
+
+test('a report that is already settled cannot be locked into a second settlement', { skip: !shouldRun }, async () => {
+  await seedSettlementFixture(testEnv);
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'groups/main/settlements/20260930-001'), settlementSnapshotPayload());
+    await setDoc(doc(db, 'groups/main/settlements/20261001-001'), settlementSnapshotPayload());
+    await updateDoc(doc(db, 'groups/main/reports/report-1'), { settlementId: '20260930-001' });
+  });
+
+  const memberDb = testEnv.authenticatedContext('uid-1').firestore();
+  await assertFails(updateDoc(doc(memberDb, 'groups/main/reports/report-1'), {
+    settlementId: '20261001-001',
+  }));
+});
+
+// section 17的重要edge case：申訴中的紀錄不可以被結算，避免「錢都結算了，結果申訴成功」。
+test('a report under an active appeal cannot be locked into a settlement', { skip: !shouldRun }, async () => {
+  await seedSettlementFixture(testEnv);
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'groups/main/settlements/20260930-001'), settlementSnapshotPayload());
+    await updateDoc(doc(db, 'groups/main/reports/report-1'), {
+      appealedAt: serverTimestamp(),
+      appealConfirmedBy: [],
+    });
+  });
+
+  const memberDb = testEnv.authenticatedContext('uid-1').firestore();
+  await assertFails(updateDoc(doc(memberDb, 'groups/main/reports/report-1'), {
+    settlementId: '20260930-001',
+  }));
+});
+
+test('a settlement snapshot is immutable except for the SETTLED -> RESET status transition', { skip: !shouldRun }, async () => {
+  await seedSettlementFixture(testEnv);
+  const memberDb = testEnv.authenticatedContext('uid-1').firestore();
+  await setDoc(doc(memberDb, 'groups/main/settlements/20260930-001'), settlementSnapshotPayload());
+
+  // 不能偷改金額欄位。
+  await assertFails(updateDoc(doc(memberDb, 'groups/main/settlements/20260930-001'), {
+    totalAmount: 999999,
+  }));
+
+  // 正確的Reset：狀態轉成RESET、加上resetAt，其餘欄位不變。
+  await assertSucceeds(updateDoc(doc(memberDb, 'groups/main/settlements/20260930-001'), {
+    status: 'RESET',
+    resetAt: serverTimestamp(),
+  }));
+
+  // Settlement文件一律不能被刪除(即使已經Reset)。
+  await assertFails(deleteDoc(doc(memberDb, 'groups/main/settlements/20260930-001')));
+});
+
+test('creating a settlement with a spoofed createdBy fails', { skip: !shouldRun }, async () => {
+  await seedSettlementFixture(testEnv);
+  const memberDb = testEnv.authenticatedContext('uid-1').firestore();
+
+  await assertFails(setDoc(
+    doc(memberDb, 'groups/main/settlements/20260930-001'),
+    settlementSnapshotPayload({ createdBy: 'member2' }),
+  ));
+});
+

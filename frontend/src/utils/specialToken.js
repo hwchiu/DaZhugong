@@ -12,6 +12,12 @@
 export const SPECIAL_TOKEN_MULTIPLIER = 5;
 export const SPECIAL_TOKEN_TYPE = 'SPECIAL_5X';
 export const NORMAL_TOKEN_TYPE = 'NORMAL';
+// 自首Token(spec「結算 Settlement Feature Spec」section 19)：目前app裡還沒有實際
+// 產生這種report的操作流程(沒有對應的「自首」UI)，這裡先定義好常數/倍率，讓結算的
+// 金額計算(buildSettlementMembers)對這個Token類型是「結構上已經支援」的，之後若要
+// 補上自首的申告流程，不需要再回頭改結算的計算邏輯。
+export const CONFESSION_TOKEN_TYPE = 'CONFESSION_05X';
+export const CONFESSION_TOKEN_MULTIPLIER = 0.5;
 export const SPECIAL_TOKEN_SOURCE = 'PIG_RUB_EASTER_EGG';
 export const NORMAL_TOKEN_SOURCE = 'NORMAL_FLOW';
 export const SPECIAL_TOKEN_SPIN_DURATION_MS = 1000;

@@ -8,6 +8,7 @@ import Pending from './pages/Pending.jsx';
 import History from './pages/History.jsx';
 import Stats from './pages/Stats.jsx';
 import Settings from './pages/Settings.jsx';
+import Settlement from './pages/Settlement.jsx';
 import { useAuthStore } from './store/authStore.js';
 import { useDailyTheme } from './hooks/useDailyTheme.js';
 
@@ -18,6 +19,7 @@ const AUTHENTICATED_ROUTE_LABELS = {
   '/history': '歷史紀錄',
   '/stats': '統計',
   '/settings': '設定',
+  '/settings/settlement': '豬公結算',
 };
 
 function AppContent() {
@@ -92,6 +94,7 @@ function AppContent() {
               <Route path="/history" element={<History />} />
               <Route path="/stats" element={<Stats />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/settings/settlement" element={<Settlement />} />
               <Route path="*" element={<Navigate replace to="/" />} />
             </Routes>
           </main>

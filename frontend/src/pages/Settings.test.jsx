@@ -1,5 +1,6 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const authState = vi.hoisted(() => ({
@@ -28,6 +29,10 @@ import Settings from './Settings.jsx';
 
 afterEach(cleanup);
 
+function renderSettings() {
+  return render(<Settings />, { wrapper: MemoryRouter });
+}
+
 beforeEach(() => {
   authState.logout.mockReset();
   authState.currentMember = { id: 'self', name: '自己', active: true };
@@ -48,7 +53,7 @@ beforeEach(() => {
 
 describe('Settings page', () => {
   it('shows signed-in identity, lunch time, report totals, active ranking, and inactive history without private credentials', () => {
-    render(<Settings />);
+    renderSettings();
 
     expect(screen.getByText('目前登入：自己')).toBeTruthy();
     expect(screen.getByText('12:00–13:00')).toBeTruthy();
@@ -63,6 +68,14 @@ describe('Settings page', () => {
     expect(screen.queryByText(/通行碼|預設密碼/)).toBe(null);
   });
 
+  it('shows a 💰豬公結算 entry linking to /settings/settlement with the current unsettled token total', () => {
+    renderSettings();
+
+    const settlementLink = screen.getByRole('link', { name: /豬公結算/ });
+    expect(settlementLink.getAttribute('href')).toBe('/settings/settlement');
+    expect(within(settlementLink).getByText('目前 10 Token')).toBeTruthy();
+  });
+
   it('disables logout while pending and restores the action after a failure', async () => {
     const user = userEvent.setup();
     let rejectLogout;
@@ -70,7 +83,7 @@ describe('Settings page', () => {
       rejectLogout = reject;
     }));
 
-    render(<Settings />);
+    renderSettings();
 
     const button = screen.getByRole('button', { name: '登出' });
     await user.click(button);
@@ -87,7 +100,7 @@ describe('Settings page', () => {
 
   it('shows loading and safe group errors', () => {
     useGroupMock.mockReturnValue({ group: null, members: [], loading: true, error: null });
-    const { rerender } = render(<Settings />);
+    const { rerender } = renderSettings();
     expect(screen.getByRole('status').textContent).toContain('載入設定');
 
     useGroupMock.mockReturnValue({ group: null, members: [], loading: false, error: new Error('secret') });
@@ -108,7 +121,7 @@ describe('Settings page', () => {
       error: null,
     });
 
-    render(<Settings />);
+    renderSettings();
 
     const huyeButton = screen.getByRole('button', { name: '查看虎爺的角色卡' });
     await user.click(huyeButton);
@@ -132,7 +145,7 @@ describe('Settings page', () => {
       error: null,
     });
 
-    render(<Settings />);
+    renderSettings();
 
     expect(screen.queryByRole('button', { name: '阿明' })).toBe(null);
     expect(screen.getByText('阿明')).toBeTruthy();
@@ -147,14 +160,14 @@ describe('Settings page', () => {
     });
     authState.currentMember = { id: 'sherry', name: '房產大亨', active: true };
 
-    render(<Settings />);
+    renderSettings();
 
     const accountSection = screen.getByText('目前登入：房產大亨').closest('section');
     expect(within(accountSection).getByRole('img', { name: '房產大亨' })).toBeTruthy();
   });
 
   it('does not show an obsolete exempt Emily entry after she becomes a real member', () => {
-    render(<Settings />);
+    renderSettings();
 
     expect(screen.queryByRole('heading', { name: '豁免成員' })).toBe(null);
   });
@@ -176,7 +189,7 @@ describe('Settings page', () => {
         error: null,
       });
 
-      render(<Settings />);
+      renderSettings();
 
       const row = screen.getByText('阿明').closest('li');
       expect(within(row).getByText('冷卻中 2:00')).toBeTruthy();
@@ -185,7 +198,7 @@ describe('Settings page', () => {
     it('does not show a cooldown badge for a member with no recent report', () => {
       useTokensMock.mockReturnValue({ tokens: [], loading: false, error: null });
 
-      render(<Settings />);
+      renderSettings();
 
       const row = screen.getByText('阿明').closest('li');
       expect(within(row).queryByRole('timer')).toBe(null);
@@ -198,7 +211,7 @@ describe('Settings page', () => {
         error: null,
       });
 
-      render(<Settings />);
+      renderSettings();
 
       const friendRow = screen.getByText('阿明').closest('li');
       const selfRow = screen.getByText('自己').closest('li');

@@ -193,4 +193,34 @@ describe('HistoryRecordCard', () => {
 
     expect(screen.getByRole('button', { name: '處理中…' }).disabled).toBe(true);
   });
+
+  it('shows a 🔒已結算 badge and hides 申訴/確認 buttons for a settled record, even under an active appeal', () => {
+    const onViewSettlement = vi.fn();
+    render(
+      <HistoryRecordCard
+        token={buildToken({
+          settlementId: '20260930-001',
+          appealedAt: Date.UTC(2026, 8, 20),
+          appealConfirmedBy: [],
+        })}
+        reporter={reporter}
+        target={target}
+        currentMember={{ id: 'target' }}
+        perspective="general"
+        isBusy={false}
+        onFileAppeal={() => {}}
+        onConfirmAppeal={() => {}}
+        onViewSettlement={onViewSettlement}
+      />,
+    );
+
+    const settlementBadge = screen.getByRole('button', { name: /已結算.*20260930-001/ });
+    expect(settlementBadge).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '申訴' })).toBe(null);
+    expect(screen.queryByRole('button', { name: '確認' })).toBe(null);
+    expect(screen.queryByText(/申訴中/)).toBe(null);
+
+    settlementBadge.click();
+    expect(onViewSettlement).toHaveBeenCalledWith('20260930-001');
+  });
 });

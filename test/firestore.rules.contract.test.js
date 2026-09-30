@@ -65,7 +65,7 @@ test('rules support the appeal flow: only the record owner can file, only 3+ con
   assert.match(rules, /function validAppealDelete\(groupId, tokenId\)/);
   assert.match(
     rules,
-    /allow update:\s*if validAppealFileUpdate\(groupId, tokenId\) \|\| validAppealConfirmUpdate\(groupId, tokenId\)/,
+    /allow update:\s*if validAppealFileUpdate\(groupId, tokenId\)\s*\|\|\s*validAppealConfirmUpdate\(groupId, tokenId\)\s*\|\|\s*validSettlementLockUpdate\(groupId, tokenId\)/,
   );
   assert.match(rules, /allow delete:\s*if validAppealDelete\(groupId, tokenId\)/);
 
@@ -152,4 +152,58 @@ test('rules support the special token (pig-rub easter egg): server-fixed tokenVa
   assert.match(rules, /reportFieldUnchangedOnAppealUpdate\('displayTokenCount'\)/);
   assert.match(rules, /reportFieldUnchangedOnAppealUpdate\('tokenValue'\)/);
   assert.match(rules, /reportFieldUnchangedOnAppealUpdate\('source'\)/);
+});
+
+test('rules support settlement: locking reports with a settlementId, and an immutable settlement snapshot', () => {
+  assert.match(rules, /function settlementPath\(groupId, settlementId\)/);
+  assert.match(rules, /function validSettlementLockUpdate\(groupId, tokenId\)/);
+  assert.match(rules, /function validSettlementCreate\(groupId, settlementId\)/);
+  assert.match(rules, /function validSettlementResetUpdate\(groupId, settlementId\)/);
+
+  // 一筆report只能被鎖定一次(避免同一筆Token被算進兩期Settlement)，而且鎖定時
+  // 目標Settlement文件必須已經存在。
+  assert.match(
+    rules,
+    /validSettlementLockUpdate[\s\S]*?resource\.data\.settlementId == null/,
+  );
+  assert.match(
+    rules,
+    /validSettlementLockUpdate[\s\S]*?exists\(settlementPath\(groupId, request\.resource\.data\.settlementId\)\)/,
+  );
+
+  // section 17的重要edge case：申訴中(或曾經申訴過)的紀錄不可以被結算。
+  assert.match(
+    rules,
+    /validSettlementLockUpdate[\s\S]*?resource\.data\.appealedAt == null/,
+  );
+
+  // Settlement快照一旦建立就不可變：Reset只允許SETTLED -> RESET，其餘欄位
+  // (金額、成員明細)前後必須完全相等。
+  assert.match(rules, /resource\.data\.status == 'SETTLED'/);
+  assert.match(rules, /request\.resource\.data\.status == 'RESET'/);
+  assert.match(
+    rules,
+    /validSettlementResetUpdate[\s\S]*?request\.resource\.data\.totalAmount == resource\.data\.totalAmount/,
+  );
+  assert.match(
+    rules,
+    /validSettlementResetUpdate[\s\S]*?request\.resource\.data\.members == resource\.data\.members/,
+  );
+
+  assert.match(
+    rules,
+    /match \/reports\/\{tokenId\}[\s\S]*?allow update:\s*if validAppealFileUpdate\(groupId, tokenId\)\s*\|\|\s*validAppealConfirmUpdate\(groupId, tokenId\)\s*\|\|\s*validSettlementLockUpdate\(groupId, tokenId\)/,
+  );
+  assert.match(
+    rules,
+    /match \/settlements\/\{settlementId\}[\s\S]*?allow create:\s*if validSettlementCreate\(groupId, settlementId\)/,
+  );
+  assert.match(
+    rules,
+    /match \/settlements\/\{settlementId\}[\s\S]*?allow update:\s*if validSettlementResetUpdate\(groupId, settlementId\)/,
+  );
+  assert.match(
+    rules,
+    /match \/settlements\/\{settlementId\}[\s\S]*?allow delete:\s*if false/,
+  );
 });

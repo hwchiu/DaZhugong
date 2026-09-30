@@ -187,6 +187,31 @@ describe('useGroup', () => {
     expect(alpha.totalTokens).toBe(7); // 1 + 1 + 5，不是3(COUNT筆數)
   });
 
+  it('excludes reports that already have a settlementId from the current totals (Settlement feature)', async () => {
+    const { useGroup } = await loadHook();
+    const { result } = renderHook(() => useGroup('group-1'));
+
+    const [groupListener, membersListener, reportsListener] = firestoreMock.state.subscriptions;
+    await act(async () => {
+      groupListener.next(makeSnapshot({ id: 'group-1', data: { name: 'Lunch Crew' } }));
+      membersListener.next(makeSnapshot({
+        docs: [makeDoc('alpha', { name: 'Alpha', active: true })],
+      }));
+      reportsListener.next(makeSnapshot({
+        docs: [
+          makeDoc('report-1', { targetId: 'alpha', tokenType: 'NORMAL', tokenValue: 1 }),
+          // 已結算的紀錄：settlementId有值，不再計入「目前豬公」，但紀錄本身依然存在。
+          makeDoc('report-2', { targetId: 'alpha', tokenType: 'NORMAL', tokenValue: 1, settlementId: '20260930-001' }),
+        ],
+      }));
+    });
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    const alpha = result.current.members.find((member) => member.id === 'alpha');
+    expect(alpha.totalTokens).toBe(1);
+  });
+
   it('returns a null group when the document does not exist', async () => {
     const { useGroup } = await loadHook();
     const { result } = renderHook(() => useGroup('missing-group'));
