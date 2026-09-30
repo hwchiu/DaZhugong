@@ -1,5 +1,6 @@
 import MemberAvatar from './MemberAvatar.jsx';
 import { isSpecialTokenReport, reportTokenValue } from '../utils/specialToken.js';
+import { formatSettlementDisplayId } from '../utils/settlement.js';
 
 const APPEAL_CONFIRMATIONS_REQUIRED = 3;
 
@@ -57,6 +58,7 @@ export default function HistoryRecordCard({
   isBusy,
   onFileAppeal,
   onConfirmAppeal,
+  onViewSettlement,
 }) {
   const isOwnRecord = token.targetId === currentMember?.id;
   const appealConfirmedBy = Array.isArray(token.appealConfirmedBy) ? token.appealConfirmedBy : [];
@@ -65,6 +67,10 @@ export default function HistoryRecordCard({
   const isSpecial = isSpecialTokenReport(token);
   const tokenValue = reportTokenValue(token);
   const reasonText = typeof token.reason === 'string' && token.reason.trim() ? token.reason : '未填寫原因（舊版紀錄）';
+  // 已結算(spec section 15)：這筆紀錄已經被封存進某一期Settlement，之後永遠不能再
+  // 申訴或確認——UI上直接把按鈕整段拿掉(不是disable)，因為對使用者來說這是一筆
+  // immutable record，跟「暫時不能操作」是不同的語意。
+  const isSettled = Boolean(token.settlementId);
 
   return (
     <li
@@ -80,6 +86,16 @@ export default function HistoryRecordCard({
             <p className="mb-2 inline-flex items-center gap-1 rounded-full bg-rose-600 px-2.5 py-1 text-xs font-bold text-white">
               <span aria-hidden="true">⭐</span> 特殊 5x
             </p>
+          ) : null}
+
+          {isSettled ? (
+            <button
+              type="button"
+              onClick={() => onViewSettlement?.(token.settlementId)}
+              className="mb-2 ml-2 inline-flex items-center gap-1 rounded-full bg-slate-800 px-2.5 py-1 text-xs font-bold text-white transition hover:bg-slate-700"
+            >
+              <span aria-hidden="true">🔒</span> 已結算 · {formatSettlementDisplayId(token.settlementId)}
+            </button>
           ) : null}
 
           <p className="text-base leading-7 text-slate-800">
@@ -113,7 +129,7 @@ export default function HistoryRecordCard({
             </span>
           </div>
 
-          {hasActiveAppeal ? (
+          {isSettled ? null : hasActiveAppeal ? (
             <div className="mt-3 rounded-2xl bg-amber-50 px-4 py-3">
               <p className="text-sm font-bold text-amber-900">
                 申訴中（{appealConfirmedBy.length}/{APPEAL_CONFIRMATIONS_REQUIRED} 人確認）

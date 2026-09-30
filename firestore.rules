@@ -14,6 +14,10 @@ service cloud.firestore {
       return /databases/$(database)/documents/groups/$(groupId)/reports/$(tokenId);
     }
 
+    function settlementPath(groupId, settlementId) {
+      return /databases/$(database)/documents/groups/$(groupId)/settlements/$(settlementId);
+    }
+
     function memberIsActive(groupId, memberId) {
       return exists(memberPath(groupId, memberId))
         && get(memberPath(groupId, memberId)).data.active == true;
@@ -371,6 +375,106 @@ service cloud.firestore {
         && resource.data.appealConfirmedBy.size() >= appealConfirmationsRequired();
     }
 
+    // ---- 結算(Settlement)：把「已確認、尚未被結算」的report鎖到某一期Settlement ----
+    // 資料模型跟申訴一樣走「額外欄位」路線：在既有report文件上加settlementId欄位，
+    // 不刪除、不改動任何原本的欄位——這是spec要求的「Reset不是刪除，是封存」。
+    //
+    // 這裡只允許「新增settlementId」這一件事，而且新值必須指向一份已經存在的
+    // groups/{groupId}/settlements/{settlementId}文件。這份Settlement文件必須先透過
+    // 一次獨立的create commit(見settlementService.js createSettlement的Phase 1)，
+    // 這次update(Phase 2)的exists()才能看到它——同一個batch/transaction內兩個文件
+    // 互相看不到彼此尚未commit的寫入，跟validAppealDelete那邊的說明是同一個道理。
+    function reportIdentityUnchangedOnSettlementLock() {
+      return request.resource.data.targetId == resource.data.targetId
+        && request.resource.data.reporterId == resource.data.reporterId
+        && request.resource.data.timestamp == resource.data.timestamp
+        && reportFieldUnchangedOnAppealUpdate('reason')
+        && reportFieldUnchangedOnAppealUpdate('tokenType')
+        && reportFieldUnchangedOnAppealUpdate('displayTokenCount')
+        && reportFieldUnchangedOnAppealUpdate('tokenValue')
+        && reportFieldUnchangedOnAppealUpdate('source')
+        && reportFieldUnchangedOnAppealUpdate('appealedAt')
+        && reportFieldUnchangedOnAppealUpdate('appealConfirmedBy');
+    }
+
+    function validSettlementLockUpdate(groupId, tokenId) {
+      let hadSettlementIdField = resource.data.keys().hasAny(['settlementId']);
+      return reportIdentityUnchangedOnSettlementLock()
+        // 只有「還沒被結算過」的紀錄才能被鎖上，防止同一筆Token被算進兩期Settlement。
+        && (!hadSettlementIdField || resource.data.settlementId == null)
+        // 申訴（section 17這個重要edge case）：只要曾經提出申訴(不論後來有沒有解決)，
+        // 這筆紀錄目前一定還存在appealedAt欄位，一律不允許進入結算，
+        // 避免「錢都結算了，結果申訴成功」這種情況。
+        && (!resource.data.keys().hasAny(['appealedAt']) || resource.data.appealedAt == null)
+        && request.resource.data.settlementId is string
+        && request.resource.data.settlementId.size() > 0
+        && exists(settlementPath(groupId, request.resource.data.settlementId))
+        // 這次更新除了settlementId之外，不能新增或刪除任何其他欄位。
+        && request.resource.data.keys().hasAll(resource.data.keys())
+        && request.resource.data.size() == resource.data.size() + (hadSettlementIdField ? 0 : 1);
+    }
+
+    // Settlement文件本身的欄位形狀：對應settlementService.js createSettlement()實際
+    // 寫入的欄位，resetAt只有在Reset之後才會出現，所以拆成hasAll(必要欄位)+
+    // hasOnly(必要欄位+resetAt這個選填欄位)。
+    function hasExactSettlementFields(data) {
+      return data.keys().hasAll([
+          'groupId', 'periodStart', 'periodEnd', 'tokenUnitPrice', 'currency',
+          'totalTokenValue', 'totalAmount', 'members', 'status', 'createdBy', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'groupId', 'periodStart', 'periodEnd', 'tokenUnitPrice', 'currency',
+          'totalTokenValue', 'totalAmount', 'members', 'status', 'createdBy', 'createdAt', 'resetAt'
+        ]);
+    }
+
+    // 建立Settlement：任何目前登入的active成員都可以幫整個群組執行一次結算
+    // (這個app沒有「管理員」角色，跟其他既有寫入路徑的信任模型一致)。
+    // tokenUnitPrice/currency/totalTokenValue/totalAmount在建立當下就固定寫死進這份
+    // 文件，之後即使全域單價調整，這份Settlement快照的金額也不會被重新計算出
+    // 不同的結果(spec section 19)。
+    function validSettlementCreate(groupId, settlementId) {
+      return hasExactSettlementFields(request.resource.data)
+        && !request.resource.data.keys().hasAny(['resetAt'])
+        && request.resource.data.groupId == groupId
+        && request.resource.data.status == 'SETTLED'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.periodEnd == request.time
+        && request.resource.data.tokenUnitPrice is number
+        && request.resource.data.tokenUnitPrice > 0
+        && request.resource.data.currency is string
+        && request.resource.data.totalTokenValue is number
+        && request.resource.data.totalTokenValue >= 0
+        && request.resource.data.totalAmount is number
+        && request.resource.data.totalAmount >= 0
+        && request.resource.data.members is list
+        && request.resource.data.createdBy is string
+        && isMember(groupId, request.resource.data.createdBy);
+    }
+
+    // Reset：只允許SETTLED -> RESET這一種狀態轉換，其餘欄位(包含金額、成員明細快照)
+    // 一律不可變——這是spec section 21「Settlement是不可變的Snapshot」的規則層防線。
+    // 已知取捨：Settlement資料模型沒有另外記錄「誰按下Reset」的欄位，這裡沿用
+    // createdBy(當初按下兌換的人)作為唯一能執行Reset的身分——同一個群組如果想讓
+    // 別人代為按Reset，目前的資料模型還不支援，留待之後有需要再擴充。
+    function validSettlementResetUpdate(groupId, settlementId) {
+      return hasExactSettlementFields(request.resource.data)
+        && resource.data.status == 'SETTLED'
+        && request.resource.data.status == 'RESET'
+        && request.resource.data.resetAt == request.time
+        && request.resource.data.groupId == resource.data.groupId
+        && request.resource.data.periodStart == resource.data.periodStart
+        && request.resource.data.periodEnd == resource.data.periodEnd
+        && request.resource.data.tokenUnitPrice == resource.data.tokenUnitPrice
+        && request.resource.data.currency == resource.data.currency
+        && request.resource.data.totalTokenValue == resource.data.totalTokenValue
+        && request.resource.data.totalAmount == resource.data.totalAmount
+        && request.resource.data.members == resource.data.members
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt
+        && isMember(groupId, resource.data.createdBy);
+    }
+
     match /groups/{groupId} {
       allow read: if true;
       allow write: if false;
@@ -396,8 +500,19 @@ service cloud.firestore {
         allow create: if validReportCreate(groupId, tokenId)
           || validDirectReportCreate(groupId, tokenId)
           || validSpecialTokenReportCreate(groupId, tokenId);
-        allow update: if validAppealFileUpdate(groupId, tokenId) || validAppealConfirmUpdate(groupId, tokenId);
+        allow update: if validAppealFileUpdate(groupId, tokenId)
+          || validAppealConfirmUpdate(groupId, tokenId)
+          || validSettlementLockUpdate(groupId, tokenId);
         allow delete: if validAppealDelete(groupId, tokenId);
+      }
+
+      // 結算(Settlement)：Settlement文件本身一經建立就是不可變快照(除了status
+      // SETTLED -> RESET這一種轉換)，任何欄位金額/成員明細都不能被之後的update改動。
+      match /settlements/{settlementId} {
+        allow read: if true;
+        allow create: if validSettlementCreate(groupId, settlementId);
+        allow update: if validSettlementResetUpdate(groupId, settlementId);
+        allow delete: if false;
       }
 
       // 每日召喚限制標記：read開放(前端可能想顯示「今天已經召喚過了」之類的狀態)，

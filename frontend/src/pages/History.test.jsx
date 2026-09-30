@@ -1,5 +1,6 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const authState = vi.hoisted(() => ({ groupId: 'main', currentMember: null }));
@@ -63,7 +64,7 @@ function findResultSection() {
 
 describe('History page', () => {
   it('subscribes to the full token history once (not a capped count), reused across all three scopes', () => {
-    render(<History />);
+    render(<History />, { wrapper: MemoryRouter });
     expect(useTokensMock).toHaveBeenCalledWith('main', 'all');
   });
 
@@ -86,7 +87,7 @@ describe('History page', () => {
         error: null,
       });
 
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
 
       expect(screen.getByText('共 1 筆紀錄')).toBeTruthy();
       const rows = within(findResultSection()).getAllByRole('listitem');
@@ -110,7 +111,7 @@ describe('History page', () => {
         error: null,
       });
 
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
 
       const row = within(findResultSection()).getByRole('listitem');
       expect(within(row).getByRole('img', { name: '房產大亨' })).toBeTruthy();
@@ -138,7 +139,7 @@ describe('History page', () => {
         error: null,
       });
 
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
 
       const rows = within(findResultSection()).getAllByRole('listitem');
       const rowAgainstTycoon = rows.find((row) => row.textContent.includes('房產大亨'));
@@ -158,7 +159,7 @@ describe('History page', () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
       useGroupMock.mockReturnValue({ members: [{ id: 'a', name: 'Amy', active: true }], loading: false, error: null });
 
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
       await switchToAllScope(user);
 
       expect(screen.getByLabelText('日期範圍')).toBeTruthy();
@@ -190,7 +191,7 @@ describe('History page', () => {
         error: null,
       });
 
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
       await switchToAllScope(user);
       expect(screen.getByText('共 2 筆紀錄')).toBeTruthy();
 
@@ -231,7 +232,7 @@ describe('History page', () => {
         error: null,
       });
 
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
       await switchToAllScope(user);
       await user.selectOptions(screen.getByLabelText('Token 類型'), 'special');
       await user.click(screen.getByRole('button', { name: '🔍 搜尋' }));
@@ -259,7 +260,7 @@ describe('History page', () => {
         error: null,
       });
 
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
       await switchToAllScope(user);
       await user.selectOptions(screen.getByLabelText('投票對象'), 'amy');
       await user.click(screen.getByRole('button', { name: '🔍 搜尋' }));
@@ -283,7 +284,7 @@ describe('History page', () => {
         error: null,
       });
 
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
       await switchToAllScope(user);
 
       expect(screen.getByText('共 1 筆紀錄')).toBeTruthy();
@@ -311,7 +312,7 @@ describe('History page', () => {
         error: null,
       });
 
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
       await switchToVotedAgainstMeScope(user);
 
       expect(screen.getByText('我被投票的紀錄')).toBeTruthy();
@@ -335,7 +336,7 @@ describe('History page', () => {
         error: null,
       });
 
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
       await switchToVotedAgainstMeScope(user);
 
       const row = within(findResultSection()).getByRole('listitem');
@@ -372,7 +373,7 @@ describe('History page', () => {
         error: null,
       });
 
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
       await switchToVotedAgainstMeScope(user);
 
       expect(screen.getByText('特殊 5x')).toBeTruthy();
@@ -381,7 +382,7 @@ describe('History page', () => {
 
     it('explains the real 3-peer-confirmation appeal mechanism (not an admin-review flow)', async () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
       await switchToVotedAgainstMeScope(user);
 
       expect(screen.getByText('申訴說明')).toBeTruthy();
@@ -391,7 +392,7 @@ describe('History page', () => {
 
     it('shows an empty-state message when nobody has reported the current user', async () => {
       const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
       await switchToVotedAgainstMeScope(user);
 
       expect(screen.getByText('目前還沒有其他成員投給你 Token。')).toBeTruthy();
@@ -411,7 +412,7 @@ describe('History page', () => {
         error: null,
       });
 
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
       let rows = within(findResultSection()).getAllByRole('listitem');
       expect(rows[0].querySelector('time').textContent).toContain('7'); // daysAgo(1) from Sep 8 = Sep 7
       expect(rows[1].querySelector('time').textContent).toContain('6'); // daysAgo(2) = Sep 6
@@ -442,7 +443,7 @@ describe('History page', () => {
       });
       fileAppealMock.mockResolvedValue(undefined);
 
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
       await user.click(screen.getByRole('button', { name: '申訴' }));
 
       const dialog = screen.getByRole('dialog', { name: '確認提出申訴' });
@@ -470,7 +471,7 @@ describe('History page', () => {
       });
       fileAppealMock.mockRejectedValue(new Error('boom'));
 
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
       await user.click(screen.getByRole('button', { name: '申訴' }));
       await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: '確定' }));
 
@@ -503,7 +504,7 @@ describe('History page', () => {
         error: null,
       });
 
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
 
       expect(screen.getByText('申訴中（0/3 人確認）')).toBeTruthy();
       expect(screen.getByRole('button', { name: '確認' })).toBeTruthy();
@@ -513,13 +514,13 @@ describe('History page', () => {
   describe('loading and error states', () => {
     it('shows a loading indicator while group or token data is loading', () => {
       useGroupMock.mockReturnValue({ members: [], loading: true, error: null });
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
       expect(screen.getByRole('status')).toHaveProperty('textContent', expect.stringContaining('載入歷史紀錄中'));
     });
 
     it('shows a safe error message when loading fails', () => {
       useTokensMock.mockReturnValue({ tokens: [], loading: false, error: new Error('boom') });
-      render(<History />);
+      render(<History />, { wrapper: MemoryRouter });
       expect(screen.getByRole('alert').textContent).toContain('目前無法載入歷史紀錄，請稍後再試。');
     });
   });

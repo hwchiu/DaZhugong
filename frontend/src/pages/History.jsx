@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import HistoryRecordCard from '../components/HistoryRecordCard.jsx';
 import { useGroup } from '../hooks/useGroup.js';
 import { useTokens } from '../hooks/useTokens.js';
@@ -27,6 +28,14 @@ const TOKEN_TYPE_OPTIONS = [
   { id: 'all', label: '全部' },
   { id: 'normal', label: 'Normal 1x' },
   { id: 'special', label: 'Special 5x' },
+];
+
+// spec section 16：History Filter新增「結算狀態」——已結算的紀錄是immutable record，
+// 使用者可能會想單獨查「哪些還沒結算」或「哪些已經結算過、要對照哪一期Report」。
+const SETTLEMENT_STATUS_OPTIONS = [
+  { id: 'all', label: '全部' },
+  { id: 'unsettled', label: '未結算' },
+  { id: 'settled', label: '已結算' },
 ];
 
 function toMillis(timestamp) {
@@ -66,6 +75,7 @@ function getDefaultAllScopeFilters() {
     targetMemberId: 'all',
     tokenType: 'all',
     reasonCategory: 'all',
+    settlementStatus: 'all',
   };
 }
 
@@ -121,6 +131,7 @@ function ResultSummaryBar({ count, sortDirection, onToggleSort, label = '筆紀�
 }
 
 export default function History() {
+  const navigate = useNavigate();
   const currentMember = useAuthStore((state) => state.currentMember);
   const groupId = useAuthStore((state) => state.groupId);
   const { members, loading: groupLoading, error: groupError } = useGroup(groupId);
@@ -171,6 +182,8 @@ export default function History() {
       if (appliedFilters.tokenType === 'normal' && isSpecialTokenReport(token)) return false;
       if (appliedFilters.tokenType === 'special' && !isSpecialTokenReport(token)) return false;
       if (appliedFilters.reasonCategory !== 'all' && categorizeReason(token.reason) !== appliedFilters.reasonCategory) return false;
+      if (appliedFilters.settlementStatus === 'unsettled' && token.settlementId) return false;
+      if (appliedFilters.settlementStatus === 'settled' && !token.settlementId) return false;
       return true;
     });
   }, [sortedTokens, appliedFilters]);
@@ -231,6 +244,12 @@ export default function History() {
     setConfirmDialog({ type: 'confirm', token });
   }
 
+  // spec section 16：點擊「已結算」badge上的Settlement ID，導向該期的Settlement Report。
+  function handleViewSettlement(settlementId) {
+    if (!settlementId) return;
+    navigate(`/settings/settlement?settlementId=${encodeURIComponent(settlementId)}`);
+  }
+
   async function handleDialogConfirm() {
     if (!confirmDialog) return;
     const { type, token } = confirmDialog;
@@ -264,6 +283,7 @@ export default function History() {
             isBusy={pendingReportId === token.id}
             onFileAppeal={openFileAppealDialog}
             onConfirmAppeal={openConfirmAppealDialog}
+            onViewSettlement={handleViewSettlement}
           />
         ))}
       </ol>
@@ -388,6 +408,24 @@ export default function History() {
                 {REASON_CATEGORIES.map((category) => (
                   <option key={category.id} value={category.id}>
                     {category.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="history-settlement-status" className="text-sm font-bold text-slate-800">
+                結算狀態
+              </label>
+              <select
+                id="history-settlement-status"
+                value={draftFilters.settlementStatus}
+                onChange={(event) => updateDraftFilter('settlementStatus', event.target.value)}
+                className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-800"
+              >
+                {SETTLEMENT_STATUS_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
                   </option>
                 ))}
               </select>

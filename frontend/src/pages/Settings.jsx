@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import MemberAvatar from '../components/MemberAvatar.jsx';
 import { getMemberAvatarProfile } from '../data/memberAvatars.js';
 import { useGroup } from '../hooks/useGroup.js';
@@ -6,6 +7,7 @@ import { useNowTicker } from '../hooks/useNowTicker.js';
 import { useTokens } from '../hooks/useTokens.js';
 import { useAuthStore } from '../store/authStore.js';
 import { formatCooldownRemaining, getCooldownStatus } from '../utils/cooldown.js';
+import { formatTokenValue } from '../utils/settlement.js';
 
 const SAFE_LOAD_ERROR_MESSAGE = '目前無法載入設定，請稍後再試。';
 const SAFE_LOGOUT_ERROR_MESSAGE = '目前無法登出，請稍後再試。';
@@ -82,6 +84,14 @@ export default function Settings() {
     () => members.reduce((sum, member) => sum + getTokenCount(member), 0),
     [members],
   );
+  // 結算用的「目前累積」不能像上面totalTokens一樣floor()掉小數——一筆自首0.5x
+  // Token如果被無條件捨去，結算金額就會算錯(spec section 2的核心要求：SUM tokenValue)。
+  const unsettledTokenValue = useMemo(
+    () => members.reduce((sum, member) => (
+      sum + (Number.isFinite(member?.totalTokens) && member.totalTokens > 0 ? member.totalTokens : 0)
+    ), 0),
+    [members],
+  );
   const lunchTime = group?.lunchStart && group?.lunchEnd
     ? `${group.lunchStart}–${group.lunchEnd}`
     : '尚未設定';
@@ -146,6 +156,26 @@ export default function Settings() {
                 <p className="mt-2 text-lg font-black tabular-nums text-slate-950">{totalTokens} Token</p>
               </div>
             </section>
+
+            <Link
+              to="/settings/settlement"
+              className="flex items-center justify-between gap-3 rounded-[2rem] bg-white p-5 shadow-lg shadow-rose-100 transition hover:bg-rose-50/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
+            >
+              <div className="min-w-0">
+                <h2 className="flex items-center gap-2 text-lg font-bold text-slate-950">
+                  <span aria-hidden="true">💰</span> 豬公結算
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-slate-700">
+                  結算目前豬公
+                  <br />
+                  將目前已確認的 Token 換算為應繳金額，並產生本期結算報表。
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1 font-bold text-rose-700">
+                <span className="tabular-nums">目前 {formatTokenValue(unsettledTokenValue)} Token</span>
+                <span aria-hidden="true">›</span>
+              </div>
+            </Link>
 
             <section className="rounded-[2rem] bg-white p-5 shadow-lg shadow-rose-100">
               <div className="flex items-center justify-between gap-3">
