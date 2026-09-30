@@ -49,12 +49,17 @@ function toGroupDoc(groupSnapshot) {
 // AC14/AC41：豬公硬幣數、成員總Token數要用SUM(tokenValue)計算，不能只COUNT筆數，
 // 否則一顆價值5的特殊Token在畫面上只會被算成1。reportTokenValue()對舊資料
 // (沒有tokenValue欄位、這次功能上線之前寫入的紀錄)一律視為1，維持原本的計算結果不變。
+//
+// 結算功能(Settlement Feature Spec section 14)：一旦一筆report被結算(settlementId
+// 有值)，就不再計入「目前豬公」——目前豬公只查settlementId == null。這不是刪除，
+// 這些report仍然完整保留在reports collection、在History永久可查，只是從「本期累積」
+// 的統計裡被排除。申訴中(appealedAt有值)的紀錄則維持原本行為、仍計入統計。
 function withReportTotals(members, reports) {
   const totals = new Map();
 
   for (const report of reports) {
     const targetId = report?.targetId;
-    if (typeof targetId === 'string') {
+    if (typeof targetId === 'string' && !report?.settlementId) {
       totals.set(targetId, (totals.get(targetId) ?? 0) + reportTokenValue(report));
     }
   }
