@@ -19,6 +19,10 @@ const firebaseFirestoreMock = vi.hoisted(() => ({
   getFirestore: vi.fn((app) => ({ service: 'firestore', app })),
 }));
 
+const firebaseStorageMock = vi.hoisted(() => ({
+  getStorage: vi.fn((app) => ({ service: 'storage', app })),
+}));
+
 vi.mock('firebase/app', () => ({
   initializeApp: firebaseAppMock.initializeApp,
   getApps: firebaseAppMock.getApps,
@@ -31,6 +35,10 @@ vi.mock('firebase/auth', () => ({
 
 vi.mock('firebase/firestore', () => ({
   getFirestore: firebaseFirestoreMock.getFirestore,
+}));
+
+vi.mock('firebase/storage', () => ({
+  getStorage: firebaseStorageMock.getStorage,
 }));
 
 function makeFirebaseEnv(overrides = {}) {
@@ -65,6 +73,7 @@ beforeEach(() => {
   firebaseAppMock.getApp.mockClear();
   firebaseAuthMock.getAuth.mockClear();
   firebaseFirestoreMock.getFirestore.mockClear();
+  firebaseStorageMock.getStorage.mockClear();
 });
 
 describe('firebase configuration helpers', () => {
@@ -94,12 +103,14 @@ describe('firebase configuration helpers', () => {
       app: services.app,
       auth: services.auth,
       db: services.db,
+      storage: services.storage,
     });
     expect(services).not.toHaveProperty('appCheck');
     expect(services).not.toHaveProperty('functions');
     expect(firebaseModule.firebaseApp).toBe(services.app);
     expect(firebaseModule.auth).toBe(services.auth);
     expect(firebaseModule.db).toBe(services.db);
+    expect(firebaseModule.storage).toBe(services.storage);
     expect(firebaseModule).not.toHaveProperty('functions');
   });
 });

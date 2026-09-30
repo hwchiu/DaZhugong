@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import homePigIcon from '../assets/lego-icons/home_pig_icon_only.png';
 import historyIcon from '../assets/lego-icons/history.png';
 import settingsIcon from '../assets/lego-icons/settings_bottom.png';
@@ -12,14 +12,25 @@ import tokenBadgeIcon from '../assets/lego-icons/token_badge.png';
 // 有一個明確的取捨要記住：SVG版本用currentColor，active/inactive狀態可以直接
 // 讓圖示本身變色；照片圖示做不到這件事(沒辦法動態換照片裡的顏色)，所以這裡改用
 // 「圖示大小/透明度」+「底色圓角/文字顏色」共同表示目前選中狀態，不再依賴圖示變色。
+//
+// 大豬公回憶錄(spec section 59)：/memories/*屬於History domain底下的child navigation，
+// 不是新的Bottom Nav項目——「記錄」這個tab額外用extraActivePaths標記，讓它在
+// /memories/* 也維持active，而不是靠NavLink預設的路徑前綴比對(那樣比對不到)。
 const SIDE_TABS = [
   { to: '/', icon: homePigIcon, label: '首頁' },
-  { to: '/history', icon: historyIcon, label: '記錄' },
+  { to: '/history', icon: historyIcon, label: '記錄', extraActivePaths: ['/memories'] },
   { to: '/stats', icon: statsIcon, label: '統計' },
   { to: '/settings', icon: settingsIcon, label: '設定' },
 ];
 
 export default function BottomNav() {
+  const location = useLocation();
+
+  function isTabActive(tab, navLinkIsActive) {
+    if (navLinkIsActive) return true;
+    return (tab.extraActivePaths ?? []).some((path) => location.pathname.startsWith(path));
+  }
+
   return (
     <nav aria-label="主要功能導覽" className="fixed inset-x-0 bottom-0 z-50">
       <div className="mx-auto max-w-md border-t border-rose-100 bg-white/95 shadow-[0_-8px_24px_rgba(244,114,182,0.08)] backdrop-blur">
@@ -27,30 +38,33 @@ export default function BottomNav() {
           className="grid grid-cols-5 items-end gap-1 px-2 pt-2"
           style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.5rem)' }}
         >
-          {SIDE_TABS.slice(0, 2).map(({ to, icon, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end
-              className={({ isActive }) =>
-                `flex min-h-14 flex-col items-center justify-center rounded-2xl px-2 py-1 text-xs font-medium transition ${
-                  isActive ? 'bg-brand-soft text-brand' : 'text-slate-600'
-                }`
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <img
-                    src={icon}
-                    alt=""
-                    aria-hidden="true"
-                    className={`h-7 w-7 object-contain transition ${isActive ? 'scale-110' : 'opacity-60'}`}
-                  />
-                  <span className="mt-1">{label}</span>
-                </>
-              )}
-            </NavLink>
-          ))}
+          {SIDE_TABS.slice(0, 2).map((tab) => {
+            const { to, icon, label } = tab;
+            return (
+              <NavLink
+                key={to}
+                to={to}
+                end
+                className={({ isActive }) =>
+                  `flex min-h-14 flex-col items-center justify-center rounded-2xl px-2 py-1 text-xs font-medium transition ${
+                    isTabActive(tab, isActive) ? 'bg-brand-soft text-brand' : 'text-slate-600'
+                  }`
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <img
+                      src={icon}
+                      alt=""
+                      aria-hidden="true"
+                      className={`h-7 w-7 object-contain transition ${isTabActive(tab, isActive) ? 'scale-110' : 'opacity-60'}`}
+                    />
+                    <span className="mt-1">{label}</span>
+                  </>
+                )}
+              </NavLink>
+            );
+          })}
 
           <NavLink to="/vote" end aria-label="投票" className="flex flex-col items-center">
             {({ isActive }) => (

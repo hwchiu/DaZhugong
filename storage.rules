@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// Firebase Storage規則：只存放大豬公回憶錄(Memories)的照片(spec section 14/44)。
+// 這個app沒有Cloud Functions、也沒有自訂auth custom claims，Storage規則沒辦法像
+// firestore.rules那樣針對某個特定memberId做get()查證(Storage路徑裡沒有memberId)，
+// 因此比照這個app既有的信任層級：read對整個group公開(跟firestore.rules的
+// `allow read: if true`一致)，write只要求「目前是登入狀態」——真正的「是不是這個
+// group的active成員」由前端呼叫memoryPhotoService之前，已經透過useAuthStore/
+// currentMember確認過，比照這個app其餘功能同樣沒有Storage層級的group隔離。
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /groups/{groupId}/memories/{memoryId}/photos/{photoId} {
+      allow read: if true;
+      // 上傳前client已先做resize/壓縮(spec section 15)，這裡仍保留伺服器端的
+      // 大小/型別上限，避免有人繞過client直接打Storage API塞大檔案。
+      allow write: if request.auth != null
+        && request.resource.size <= 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if request.auth != null;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

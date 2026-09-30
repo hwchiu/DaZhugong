@@ -6,6 +6,9 @@ import Home from './pages/Home.jsx';
 import Vote from './pages/Vote.jsx';
 import Pending from './pages/Pending.jsx';
 import History from './pages/History.jsx';
+import Memories from './pages/Memories.jsx';
+import MemoryDetail from './pages/MemoryDetail.jsx';
+import MemoryEdit from './pages/MemoryEdit.jsx';
 import Stats from './pages/Stats.jsx';
 import Settings from './pages/Settings.jsx';
 import Settlement from './pages/Settlement.jsx';
@@ -17,6 +20,7 @@ const AUTHENTICATED_ROUTE_LABELS = {
   '/vote': '投票',
   '/pending': '待確認',
   '/history': '歷史紀錄',
+  '/memories': '回憶錄',
   '/stats': '統計',
   '/settings': '設定',
   '/settings/settlement': '豬公結算',
@@ -92,6 +96,9 @@ function AppContent() {
               <Route path="/vote" element={<Vote />} />
               <Route path="/pending" element={<Pending />} />
               <Route path="/history" element={<History />} />
+              <Route path="/memories" element={<Memories />} />
+              <Route path="/memories/:memoryId" element={<MemoryDetail />} />
+              <Route path="/memories/:memoryId/edit" element={<MemoryEdit />} />
               <Route path="/stats" element={<Stats />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/settings/settlement" element={<Settlement />} />

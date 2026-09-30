@@ -2,9 +2,11 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import MemberAvatar from '../components/MemberAvatar.jsx';
 import { useGroup } from '../hooks/useGroup.js';
+import { useMemories } from '../hooks/useMemories.js';
 import { useSettlements } from '../hooks/useSettlements.js';
 import { useTokens } from '../hooks/useTokens.js';
 import { createSettlement, resetSettlement } from '../services/settlementService.js';
+import { createMemoryFromSettlement } from '../services/memoryService.js';
 import { useAuthStore } from '../store/authStore.js';
 import {
   buildSettlementPreview,
@@ -101,6 +103,7 @@ export default function Settlement() {
   const { members, loading: groupLoading, error: groupError } = useGroup(groupId);
   const { tokens: reports, loading: reportsLoading, error: reportsError } = useTokens(groupId, 'all');
   const { settlements, loading: settlementsLoading, error: settlementsError } = useSettlements(groupId);
+  const { memories } = useMemories(groupId);
 
   const [expandedMemberId, setExpandedMemberId] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -148,6 +151,16 @@ export default function Settlement() {
         createdBy: currentMember?.id,
         createdAt: { seconds: Math.floor(Date.now() / 1000), nanoseconds: 0 },
       });
+
+      // 兌換成功就建立Memory Draft(spec section 9/10)：不是Reset才建立，因為Settlement
+      // 本身已經是正式的immutable snapshot。這裡刻意不讓Memory建立失敗擋住兌換完成畫面——
+      // 使用者仍然可以之後從History/Memories首頁補建立(createMemoryFromSettlement本身
+      // 是idempotent的，稍後打開/memories時仍會需要這篇Memory，先靜默失敗即可)。
+      try {
+        await createMemoryFromSettlement({ groupId, settlement: { id: settlementId, ...createdPreview }, currentMember, members, memories });
+      } catch {
+        // 靜默失敗：不影響兌換本身已經完成的事實，之後補建立即可。
+      }
     } catch {
       setActionError(SAFE_ACTION_ERROR_MESSAGE);
     } finally {
@@ -286,6 +299,13 @@ export default function Settlement() {
               {actionError}
             </p>
           ) : null}
+
+          <Link
+            to={`/memories/${completedSettlement.id}/edit`}
+            className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-rose-700 px-4 py-3 text-base font-bold text-white transition hover:bg-rose-800"
+          >
+            ❤️ 建立這次的回憶
+          </Link>
 
           <button
             type="button"

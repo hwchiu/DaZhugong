@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import HistoryRecordCard from '../components/HistoryRecordCard.jsx';
+import MemoriesEntryCard from '../components/memories/MemoriesEntryCard.jsx';
 import { useGroup } from '../hooks/useGroup.js';
+import { useMemories } from '../hooks/useMemories.js';
 import { useTokens } from '../hooks/useTokens.js';
 import { confirmAppeal, fileAppeal } from '../services/tokenService.js';
 import { useAuthStore } from '../store/authStore.js';
@@ -139,6 +141,7 @@ export default function History() {
   // 「近三天」則是這份完整資料的子集合，用同一份資料在前端各自篩選，不用切換Scope時
   // 重新建立/拆掉不同的Firestore訂閱(那樣切分頁籤會每次重新loading，體驗很差)。
   const { tokens, loading: tokensLoading, error: tokensError } = useTokens(groupId, 'all');
+  const { memories, loading: memoriesLoading } = useMemories(groupId);
 
   const [scope, setScope] = useState('recent3');
   const [sortDirection, setSortDirection] = useState('desc');
@@ -298,6 +301,9 @@ export default function History() {
           <h1 className="mt-3 text-2xl font-black text-slate-950">歷史紀錄</h1>
           <p className="mt-2 text-sm leading-6 text-slate-700">查看所有 Token 記錄，或篩選特定條件。</p>
         </header>
+
+        {/* ---- 大豬公回憶錄入口(spec section 3)：情感空間，跟下方Token Filter完全分開 ---- */}
+        <MemoriesEntryCard memories={memories} loading={memoriesLoading} />
 
         {/* ---- Scope：3種最常用的情境，不是普通filter ---- */}
         <div role="tablist" aria-label="歷史紀錄範圍" className="grid grid-cols-3 gap-2">
