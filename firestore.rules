@@ -18,6 +18,10 @@ service cloud.firestore {
       return /databases/$(database)/documents/groups/$(groupId)/settlements/$(settlementId);
     }
 
+    function memoryPath(groupId, memoryId) {
+      return /databases/$(database)/documents/groups/$(groupId)/memories/$(memoryId);
+    }
+
     function memberIsActive(groupId, memberId) {
       return exists(memberPath(groupId, memberId))
         && get(memberPath(groupId, memberId)).data.active == true;
@@ -475,6 +479,158 @@ service cloud.firestore {
         && isMember(groupId, resource.data.createdBy);
     }
 
+    // ---- Memories (大豬公回憶錄) ----
+    // 核心設計：memoryId必須等於它所屬的settlementId(見validMemoryCreate)，
+    // 這樣「一個Settlement最多只能對應一篇Memory」直接由文件路徑保證，
+    // 不需要額外的query或transaction去檢查唯一性——這是Firestore規則語言下
+    // 最簡單也最不會出錯的1:1約束方式。createMemoryFromSettlement()因此天生
+    // 是idempotent的：先getDoc同一個ID，存在就直接回傳，不存在才create。
+    function hasExactMemoryFields(data) {
+      return data.keys().hasAll([
+          'groupId', 'settlementId', 'sequenceNumber', 'status', 'title', 'story',
+          'eventDate', 'coverPhotoId', 'location', 'participants', 'settlementSnapshot',
+          'photoCount', 'commentCount', 'createdBy', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'groupId', 'settlementId', 'sequenceNumber', 'status', 'title', 'story',
+          'eventDate', 'coverPhotoId', 'location', 'participants', 'settlementSnapshot',
+          'photoCount', 'commentCount', 'createdBy', 'createdAt', 'updatedBy', 'updatedAt'
+        ]);
+    }
+
+    // Settlement Snapshot必須忠實反映當時的Settlement文件本身，不能被使用者
+    // 憑空捏造出不同的金額——這是spec section 22/35「Memory不自己重新計算Token，
+    // Settlement Snapshot immutable」在規則層的防線。
+    function settlementSnapshotMatchesSettlement(groupId, settlementId, snapshot) {
+      let settlement = get(settlementPath(groupId, settlementId)).data;
+      return snapshot.totalTokenValue == settlement.totalTokenValue
+        && snapshot.totalAmount == settlement.totalAmount
+        && snapshot.tokenUnitPrice == settlement.tokenUnitPrice
+        && snapshot.currency == settlement.currency
+        && snapshot.members is list;
+    }
+
+    function validMemoryCreate(groupId, memoryId) {
+      return hasExactMemoryFields(request.resource.data)
+        && !request.resource.data.keys().hasAny(['updatedBy', 'updatedAt'])
+        && request.resource.data.groupId == groupId
+        // 1:1約束：doc ID本身就是settlementId。
+        && request.resource.data.settlementId == memoryId
+        && exists(settlementPath(groupId, memoryId))
+        && request.resource.data.status == 'DRAFT'
+        && request.resource.data.sequenceNumber is number
+        && request.resource.data.sequenceNumber > 0
+        && request.resource.data.title is string
+        && request.resource.data.participants is list
+        && settlementSnapshotMatchesSettlement(groupId, memoryId, request.resource.data.settlementSnapshot)
+        && request.resource.data.photoCount == 0
+        && request.resource.data.commentCount == 0
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.createdBy is string
+        && isMember(groupId, request.resource.data.createdBy);
+    }
+
+    // 可編輯欄位(spec section 35)：title/story/eventDate/coverPhotoId/location/status
+    // (只能DRAFT -> PUBLISHED)。Settlement Snapshot、參與者名單、序號、建立者/時間
+    // 一律不可變——Memory屬於整個Group，任何目前active成員都可以補內容。
+    function validMemoryUpdate(groupId, memoryId) {
+      return hasExactMemoryFields(request.resource.data)
+        && request.resource.data.groupId == resource.data.groupId
+        && request.resource.data.settlementId == resource.data.settlementId
+        && request.resource.data.sequenceNumber == resource.data.sequenceNumber
+        && request.resource.data.participants == resource.data.participants
+        && request.resource.data.settlementSnapshot == resource.data.settlementSnapshot
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.title is string
+        && (resource.data.status == request.resource.data.status
+          || (resource.data.status == 'DRAFT' && request.resource.data.status == 'PUBLISHED'))
+        && request.resource.data.photoCount is number
+        && request.resource.data.photoCount >= 0
+        && request.resource.data.commentCount is number
+        && request.resource.data.commentCount >= 0
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedBy is string
+        && isMember(groupId, request.resource.data.updatedBy);
+    }
+
+    function hasExactMemoryPhotoFields(data) {
+      return data.keys().hasAll([
+          'memoryId', 'storagePath', 'downloadUrl', 'uploadedBy', 'uploadedAt', 'isCover', 'order'
+        ])
+        && data.keys().hasOnly([
+          'memoryId', 'storagePath', 'downloadUrl', 'thumbnailUrl', 'width', 'height',
+          'uploadedBy', 'uploadedAt', 'caption', 'isCover', 'order'
+        ]);
+    }
+
+    function validMemoryPhotoCreate(groupId, memoryId) {
+      return hasExactMemoryPhotoFields(request.resource.data)
+        && request.resource.data.memoryId == memoryId
+        && exists(memoryPath(groupId, memoryId))
+        && request.resource.data.storagePath is string
+        && request.resource.data.storagePath.size() > 0
+        && request.resource.data.downloadUrl is string
+        && request.resource.data.uploadedAt == request.time
+        && request.resource.data.isCover is bool
+        && request.resource.data.order is number
+        && request.resource.data.uploadedBy is string
+        && isMember(groupId, request.resource.data.uploadedBy);
+    }
+
+    // 補上封面：任何目前active成員都可以把某一張照片設為封面(spec section 34
+    // Collaborative Memory)，其餘欄位(含uploadedBy)一律不可再被改動。
+    function validMemoryPhotoUpdate(groupId, memoryId) {
+      return hasExactMemoryPhotoFields(request.resource.data)
+        && request.resource.data.memoryId == resource.data.memoryId
+        && request.resource.data.storagePath == resource.data.storagePath
+        && request.resource.data.downloadUrl == resource.data.downloadUrl
+        && request.resource.data.uploadedBy == resource.data.uploadedBy
+        && request.resource.data.uploadedAt == resource.data.uploadedAt
+        && request.resource.data.order == resource.data.order
+        && request.resource.data.isCover is bool;
+    }
+
+    // 刪除照片：只有原本上傳者可以刪(spec section 43)——這個app沒有Admin角色，
+    // 沿用既有的信任模型(比照validAppealDelete只允許本人)。
+    function validMemoryPhotoDelete(groupId) {
+      return isMember(groupId, resource.data.uploadedBy);
+    }
+
+    function hasExactMemoryCommentFields(data) {
+      return data.keys().hasAll([
+          'memoryId', 'authorId', 'authorNameSnapshot', 'content', 'createdAt', 'likeCount'
+        ])
+        && data.keys().hasOnly([
+          'memoryId', 'authorId', 'authorNameSnapshot', 'avatarSnapshot', 'content',
+          'createdAt', 'updatedAt', 'likeCount'
+        ]);
+    }
+
+    function validMemoryCommentCreate(groupId, memoryId) {
+      return hasExactMemoryCommentFields(request.resource.data)
+        && request.resource.data.memoryId == memoryId
+        && exists(memoryPath(groupId, memoryId))
+        && request.resource.data.content is string
+        && request.resource.data.content.size() > 0
+        && request.resource.data.content.size() <= 500
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.likeCount == 0
+        && request.resource.data.authorId is string
+        && isMember(groupId, request.resource.data.authorId);
+    }
+
+    function validMemoryCommentDelete(groupId) {
+      return isMember(groupId, resource.data.authorId);
+    }
+
+    // 讚：每位成員最多留一份groups/{groupId}/memories/{memoryId}/comments/{commentId}/likes/{memberId}
+    // 文件，doc ID本身就是memberId，所以create/delete天生就是「只能操作自己那一票」，
+    // 不需要額外欄位或diff檢查。
+    function validCommentLikeWrite(groupId, memberId) {
+      return isMember(groupId, memberId);
+    }
+
     match /groups/{groupId} {
       allow read: if true;
       allow write: if false;
@@ -521,6 +677,35 @@ service cloud.firestore {
         allow read: if true;
         allow create: if validSpecialTokenSummonMarkerCreate(groupId, markerId);
         allow update, delete: if false;
+      }
+
+      // 大豬公回憶錄：Memory本身不可delete(它綁定Settlement，Settlement永遠存在，
+      // spec section 33/43)，只能建立/補內容。memoryId == settlementId，1:1由路徑保證。
+      match /memories/{memoryId} {
+        allow read: if true;
+        allow create: if validMemoryCreate(groupId, memoryId);
+        allow update: if validMemoryUpdate(groupId, memoryId);
+        allow delete: if false;
+
+        match /photos/{photoId} {
+          allow read: if true;
+          allow create: if validMemoryPhotoCreate(groupId, memoryId);
+          allow update: if validMemoryPhotoUpdate(groupId, memoryId);
+          allow delete: if validMemoryPhotoDelete(groupId);
+        }
+
+        match /comments/{commentId} {
+          allow read: if true;
+          allow create: if validMemoryCommentCreate(groupId, memoryId);
+          allow update: if false;
+          allow delete: if validMemoryCommentDelete(groupId);
+
+          match /likes/{memberId} {
+            allow read: if true;
+            allow create, delete: if validCommentLikeWrite(groupId, memberId);
+            allow update: if false;
+          }
+        }
       }
 
       match /{document=**} {

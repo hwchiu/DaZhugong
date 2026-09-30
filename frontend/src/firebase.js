@@ -1,6 +1,7 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 
 export const REQUIRED_FIREBASE_ENV_FIELDS = [
   'VITE_FIREBASE_API_KEY',
@@ -46,6 +47,7 @@ function initializeFirebaseServices(env = import.meta.env) {
     app,
     auth: getAuth(app),
     db: getFirestore(app),
+    storage: getStorage(app),
   };
 }
 
@@ -55,12 +57,14 @@ let firebaseInitializationPromise;
 export let firebaseApp;
 export let auth;
 export let db;
+export let storage;
 
 function assignFirebaseServices(services) {
   firebaseServices = services;
   firebaseApp = services.app;
   auth = services.auth;
   db = services.db;
+  storage = services.storage;
 
   return services;
 }
